@@ -1,7 +1,6 @@
-using LearnXR.Core;
 using UnityEngine;
 
-public class LightSaberAudioManager : Singleton<LightSaberAudioManager>
+public class LightSaberAudioManager : MonoBehaviour
 {
     [SerializeField] private AudioSource lightSaberTurnOn;
     [SerializeField] private AudioSource lightSaberTurnOff;
