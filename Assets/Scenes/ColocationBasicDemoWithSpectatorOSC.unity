@@ -11959,6 +11959,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1178183002}
   - component: {fileID: 1178183003}
+  - component: {fileID: 1178183004}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -11996,6 +11997,20 @@ MonoBehaviour:
   transmitter: {fileID: 850250921}
   jointCubePrefab: {fileID: 5636909968954264650, guid: a53b2f82794396d4b8bb29a8a0ef3015,
     type: 3}
+  debugView: {fileID: 1178183004}
+--- !u!114 &1178183004
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1178183001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: da4faf6cc2964e62a39cc037efe79183, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  players: []
 --- !u!1 &1181412689
 GameObject:
   m_ObjectHideFlags: 0
@@ -22432,6 +22447,7 @@ SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 1178183002}
+  - {fileID: 850250919}
   - {fileID: 288859823}
   - {fileID: 1966348062}
   - {fileID: 410087041}
@@ -22444,4 +22460,3 @@ SceneRoots:
   - {fileID: 551598478}
   - {fileID: 1513112290}
   - {fileID: 1522351755}
-  - {fileID: 850250919}

@@ -34,6 +34,10 @@ namespace MetaColocationDemos.OSC
         [Tooltip("The JointCube prefab (Assets/Prefabs/OSC/JointCube.prefab).")]
         [SerializeField] private GameObject jointCubePrefab;
 
+        [Tooltip("Optional - shows every connected player's current OSC joint values live in its own " +
+                 "Inspector, for debugging. Leave unassigned to skip building the snapshot entirely.")]
+        [SerializeField] private JointOscDebugView debugView;
+
         private class JointBinding
         {
             public string Name;
@@ -65,7 +69,15 @@ namespace MetaColocationDemos.OSC
         private void LateUpdate()
         {
             // Runs after Animation Rigging/pose-apply updates every avatar's joints for this frame.
-            foreach (var rig in _rigsByOwnerClientId.Values) DriveJointCubes(rig);
+            var snapshot = debugView != null ? new List<JointOscDebugView.PlayerValues>() : null;
+
+            foreach (var rig in _rigsByOwnerClientId.Values)
+            {
+                var playerValues = DriveJointCubes(rig);
+                snapshot?.Add(playerValues);
+            }
+
+            if (debugView != null) debugView.SetSnapshot(snapshot);
         }
 
         private void OnAvatarSpawned(HumanoidPoseNetworkSync avatar)
@@ -143,8 +155,10 @@ namespace MetaColocationDemos.OSC
             _rigsByOwnerClientId[ownerClientId] = rig;
         }
 
-        private void DriveJointCubes(AvatarRig rig)
+        private JointOscDebugView.PlayerValues DriveJointCubes(AvatarRig rig)
         {
+            var playerValues = new JointOscDebugView.PlayerValues { OwnerClientId = rig.OwnerClientId };
+
             foreach (var binding in rig.Bindings)
             {
                 if (binding.Cube == null || binding.Source == null) continue;
@@ -152,11 +166,14 @@ namespace MetaColocationDemos.OSC
                 var position = binding.Name == RootJointName
                     ? ProjectToFloor(rig.AvatarRoot, binding.Source.position)
                     : binding.Source.position;
+                var rotation = binding.Source.rotation;
 
-                binding.Cube.SetPositionAndRotation(position, binding.Source.rotation);
+                binding.Cube.SetPositionAndRotation(position, rotation);
 
-                SendJoint(rig.OwnerClientId, binding.Name, position, binding.Source.rotation);
+                playerValues.Joints.Add(SendJoint(rig.OwnerClientId, binding.Name, position, rotation));
             }
+
+            return playerValues;
         }
 
         /// <summary>
@@ -170,15 +187,27 @@ namespace MetaColocationDemos.OSC
             return root.TransformPoint(local);
         }
 
-        private void SendJoint(ulong ownerClientId, string jointName, Vector3 position, Quaternion rotation)
+        private JointOscDebugView.JointValue SendJoint(ulong ownerClientId, string jointName, Vector3 position, Quaternion rotation)
         {
-            var address = $"/Player_{ownerClientId}_Joint_{jointName}";
+            var baseAddress = $"/Player_{ownerClientId}_Joint_{jointName}";
+            var positionAddress = $"{baseAddress}/position";
+            var rotationAddress = $"{baseAddress}/rotation";
 
-            transmitter.Send(OSCMessage.Create($"{address}/position",
+            transmitter.Send(OSCMessage.Create(positionAddress,
                 OSCValue.Float(position.x), OSCValue.Float(position.y), OSCValue.Float(position.z)));
 
-            transmitter.Send(OSCMessage.Create($"{address}/rotation",
+            transmitter.Send(OSCMessage.Create(rotationAddress,
                 OSCValue.Float(rotation.x), OSCValue.Float(rotation.y), OSCValue.Float(rotation.z), OSCValue.Float(rotation.w)));
+
+            return new JointOscDebugView.JointValue
+            {
+                Joint = jointName,
+                PositionAddress = positionAddress,
+                Position = position,
+                RotationAddress = rotationAddress,
+                // Same order as the floats actually sent above - x, y, z, w.
+                Rotation = new Vector4(rotation.x, rotation.y, rotation.z, rotation.w),
+            };
         }
 
         private static Transform FindChildRecursive(Transform root, string childName)
