@@ -33,6 +33,11 @@ namespace MetaColocationDemos.Spectator
                  "the spectator client on connect, so their local movement is what gets replicated.")]
         [SerializeField] private NetworkObject spectatorNetworkObject;
 
+        [Tooltip("The NetworkedVRUser prefab (with NetworkObject + OwnerNetworkTransform, registered in " +
+                 "DefaultNetworkPrefabs) to spawn for each connecting VR client, owned by that client so " +
+                 "their local avatar movement is what gets replicated.")]
+        [SerializeField] private GameObject vrUserPrefab;
+
         public static readonly HashSet<ulong> SpectatorClientIds = new();
 
         public static bool IsLocalClientSpectator { get; private set; }
@@ -56,24 +61,25 @@ namespace MetaColocationDemos.Spectator
             NetworkManager.Singleton.NetworkConfig.ConnectionApproval = true;
             // AutoMatchmakingNGO doesn't set an approval callback itself, so this is safe to assign directly.
             NetworkManager.Singleton.ConnectionApprovalCallback = ApprovalCheck;
-            NetworkManager.Singleton.OnClientConnectedCallback += HandOwnershipToSpectator;
+            NetworkManager.Singleton.OnClientConnectedCallback += HandOwnershipToConnectingClient;
         }
 
         private void OnDestroy()
         {
             if (NetworkManager.Singleton != null)
             {
-                NetworkManager.Singleton.OnClientConnectedCallback -= HandOwnershipToSpectator;
+                NetworkManager.Singleton.OnClientConnectedCallback -= HandOwnershipToConnectingClient;
             }
         }
 
         /// <summary>
         /// The spectator rig's NetworkObject (see OwnerNetworkTransform) is server-owned by default, same
-        /// as any other in-scene placed NetworkObject. Hand ownership to the connecting spectator so their
-        /// local SpectatorFlyCamera movement is what gets replicated to everyone else, instead of being
-        /// silently ignored because a non-owner is writing to it.
+        /// as any other in-scene placed NetworkObject. Hand it to the connecting spectator so their local
+        /// SpectatorFlyCamera movement is what gets replicated, instead of being silently ignored because a
+        /// non-owner is writing to it. VR clients don't share a single pre-placed rig - each one gets its
+        /// own NetworkedVRUser instance, spawned fresh and owned by that client from the start.
         /// </summary>
-        private void HandOwnershipToSpectator(ulong clientId)
+        private void HandOwnershipToConnectingClient(ulong clientId)
         {
             // Unconditional and role-agnostic, unlike everything below it: fires on every client (server or
             // not) whenever ANY client connects, purely so a device log confirms this client is in a session
@@ -81,17 +87,34 @@ namespace MetaColocationDemos.Spectator
             Debug.Log($"{nameof(SpectatorModeManager)}: OnClientConnectedCallback fired for client {clientId} " +
                       $"(local IsServer: {NetworkManager.Singleton.IsServer}, LocalClientId: {NetworkManager.Singleton.LocalClientId}).");
 
-            if (!NetworkManager.Singleton.IsServer || !SpectatorClientIds.Contains(clientId)) return;
+            if (!NetworkManager.Singleton.IsServer) return;
 
-            if (spectatorNetworkObject == null)
+            if (SpectatorClientIds.Contains(clientId))
             {
-                Debug.LogWarning($"{nameof(SpectatorModeManager)}: spectatorNetworkObject isn't set, " +
-                                  "so it can't be handed to the spectator client and won't be visible to others.");
+                if (spectatorNetworkObject == null)
+                {
+                    Debug.LogWarning($"{nameof(SpectatorModeManager)}: {nameof(spectatorNetworkObject)} isn't set, " +
+                                      "so it can't be handed to the connecting spectator and won't be visible to others.");
+                    return;
+                }
+
+                spectatorNetworkObject.ChangeOwnership(clientId);
+                Debug.Log($"{nameof(SpectatorModeManager)}: handed {nameof(spectatorNetworkObject)} ownership to client {clientId}.");
                 return;
             }
 
-            spectatorNetworkObject.ChangeOwnership(clientId);
-            Debug.Log($"{nameof(SpectatorModeManager)}: handed spectatorNetworkObject ownership to client {clientId}.");
+            if (vrUserPrefab == null)
+            {
+                Debug.LogWarning($"{nameof(SpectatorModeManager)}: {nameof(vrUserPrefab)} isn't set, " +
+                                  "so no avatar can be spawned for the connecting VR client.");
+                return;
+            }
+
+            var vrUserInstance = Instantiate(vrUserPrefab);
+            // destroyWithScene: true, since this is a runtime-spawned session object, not something that
+            // should persist across a scene reload the way DontDestroyOnLoad objects would.
+            vrUserInstance.GetComponent<NetworkObject>().SpawnWithOwnership(clientId, destroyWithScene: true);
+            Debug.Log($"{nameof(SpectatorModeManager)}: spawned {nameof(vrUserPrefab)} owned by client {clientId}.");
         }
 
         private void ApprovalCheck(NetworkManager.ConnectionApprovalRequest request, NetworkManager.ConnectionApprovalResponse response)

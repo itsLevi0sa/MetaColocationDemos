@@ -2742,6 +2742,8 @@ MonoBehaviour:
   vrCameraRig: {fileID: 710684387}
   spectatorCamera: {fileID: 330585545}
   spectatorNetworkObject: {fileID: 1966348060}
+  vrUserPrefab: {fileID: 5014441969086449538, guid: dd50aabdb5d88ec4ea50c48bd15f3419,
+    type: 3}
 --- !u!4 &288859823
 Transform:
   m_ObjectHideFlags: 0
