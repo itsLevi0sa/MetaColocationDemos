@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "com.learnxr.core": "https://github.com/dilmerv/com.learnxr.core.git",
+    "com.meta.movement": "https://github.com/oculus-samples/Unity-Movement.git#v69.0.0",
     "com.meta.xr.sdk.all": "69.0.1",
     "com.unity.collab-proxy": "2.5.2",
     "com.unity.ide.rider": "3.0.34",
