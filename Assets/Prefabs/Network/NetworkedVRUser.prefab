@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 6100868267368195640}
   - component: {fileID: 6100868267368195641}
   - component: {fileID: 6100868267368195642}
+  - component: {fileID: 6100868267368195643}
   m_Layer: 0
   m_Name: NetworkedVRUser
   m_TagString: Untagged
@@ -86,6 +87,18 @@ MonoBehaviour:
   InLocalSpace: 0
   Interpolate: 1
   SlerpPosition: 0
+--- !u!114 &6100868267368195643
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5014441969086449538}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fbcb4910a8f24fef89baa109b012d376, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
 --- !u!1001 &6438591200152138001
 PrefabInstance:
   m_ObjectHideFlags: 0
