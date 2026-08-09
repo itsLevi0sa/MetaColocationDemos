@@ -72,6 +72,13 @@ namespace MetaColocationDemos.Networking
                 foreach (var rigBuilder in GetComponentsInChildren<RigBuilder>(true)) rigBuilder.enabled = false;
                 foreach (var retargetingLayer in GetComponentsInChildren<RetargetingLayer>(true)) retargetingLayer.enabled = false;
 
+                // Disabling RigBuilder tears down its PlayableGraph, which leaves the Animator's own
+                // Controller running standalone again - it keeps evaluating every frame and silently
+                // overwrites whatever SetHumanPose just wrote, freezing the mesh at the Controller's current
+                // state pose. HumanPoseHandler doesn't need Animator to be enabled (it drives the Avatar's
+                // bone mapping directly via the Transform hierarchy), so disabling it here is safe.
+                _animator.enabled = false;
+
                 _networkedPose.OnValueChanged += (_, newPose) => ApplyPose(newPose);
                 ApplyPose(_networkedPose.Value);
             }
