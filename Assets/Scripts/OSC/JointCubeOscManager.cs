@@ -23,10 +23,6 @@ namespace MetaColocationDemos.OSC
         private const string LeftWristJointName = "Wrist_L";
         private const string RightWristJointName = "Wrist_R";
 
-        // Target transform name on Meta Movement's ArmatureSkinningUpdateRetarget rig (ExampleAvatar Variant).
-        private const string HipsTargetName = "HipsTarget";
-        private const string HeadTargetName = "HeadTarget";
-
         [Tooltip("Sends the joint OSC messages - lives on the OSCMessaging object; wired here rather than " +
                  "required on this GameObject so OSC transport config stays separate from spawn coordination.")]
         [SerializeField] private OSCTransmitter transmitter;
@@ -114,19 +110,22 @@ namespace MetaColocationDemos.OSC
             var avatarRoot = avatar.transform;
             var ownerClientId = avatar.OwnerClientId;
 
-            // Wrists aren't in the retargeting rig's IK-target list (only Hips/Spine/Chest/Neck/Head/Feet/
-            // Toes are), so pull them off the Humanoid Animator instead of the target-transform hierarchy.
+            // Read straight off the Animator's own humanoid bones, not the Animation Rigging IK-target
+            // transforms (e.g. HipsTarget/HeadTarget) - those only get updated while RigBuilder is running,
+            // which HumanoidPoseNetworkSync disables on non-owner copies (driving the mesh purely via
+            // SetHumanPose instead). The bone transforms are what SetHumanPose actually writes to, so
+            // they're correct regardless of whether the avatar we're reading is locally owned or not.
             var animator = avatarRoot.GetComponentInChildren<Animator>();
             if (animator == null)
             {
-                Debug.LogError($"{nameof(JointCubeOscManager)}: no Animator found under {avatarRoot.name}, can't resolve wrist bones.");
+                Debug.LogError($"{nameof(JointCubeOscManager)}: no Animator found under {avatarRoot.name}, can't resolve bones.");
                 return;
             }
 
             var joints = new (string Name, Transform Source)[]
             {
-                (RootJointName, FindChildRecursive(avatarRoot, HipsTargetName)),
-                (HeadJointName, FindChildRecursive(avatarRoot, HeadTargetName)),
+                (RootJointName, animator.GetBoneTransform(HumanBodyBones.Hips)),
+                (HeadJointName, animator.GetBoneTransform(HumanBodyBones.Head)),
                 (LeftWristJointName, animator.GetBoneTransform(HumanBodyBones.LeftHand)),
                 (RightWristJointName, animator.GetBoneTransform(HumanBodyBones.RightHand)),
             };
@@ -208,19 +207,6 @@ namespace MetaColocationDemos.OSC
                 // Same order as the floats actually sent above - x, y, z, w.
                 Rotation = new Vector4(rotation.x, rotation.y, rotation.z, rotation.w),
             };
-        }
-
-        private static Transform FindChildRecursive(Transform root, string childName)
-        {
-            foreach (Transform child in root)
-            {
-                if (child.name == childName) return child;
-
-                var found = FindChildRecursive(child, childName);
-                if (found != null) return found;
-            }
-
-            return null;
         }
     }
 }

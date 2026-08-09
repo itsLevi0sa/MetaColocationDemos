@@ -5298,9 +5298,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 551598471}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c88f1365b06dffc45b5dc7587842a206, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  m_Script: {fileID: 11500000, guid: 4eb5b255c03b4583b1c822c55d39d316, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
   anchorPrefab: {fileID: 1978002011806910258, guid: a6c7bad9126cbca4e92c7b76ea14ab33,
     type: 3}
   networkData: {fileID: 551598472}

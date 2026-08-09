@@ -44,12 +44,23 @@ namespace MetaColocationDemos.Networking
             }
         }
 
-        private readonly NetworkVariable<HumanoidPoseData> _networkedPose =
-            new(writePerm: NetworkVariableWritePermission.Owner);
+        // Muscles must never be null when this gets serialized - Netcode's array writer has no null-check
+        // and crashes, which happens the moment this is spawned: the default value (struct fields all
+        // zeroed/null) is what gets sent for the initial state sync, before the owner's first LateUpdate
+        // has had a chance to write a real pose into it. Built in Awake(), not a field initializer -
+        // HumanTrait.MuscleCount calls into native engine code, which Unity disallows during construction.
+        private NetworkVariable<HumanoidPoseData> _networkedPose;
 
         private Animator _animator;
         private HumanPoseHandler _poseHandler;
         private HumanPose _humanPose;
+
+        private void Awake()
+        {
+            _networkedPose = new NetworkVariable<HumanoidPoseData>(
+                new HumanoidPoseData { Muscles = new float[HumanTrait.MuscleCount] },
+                writePerm: NetworkVariableWritePermission.Owner);
+        }
 
         public override void OnNetworkSpawn()
         {
