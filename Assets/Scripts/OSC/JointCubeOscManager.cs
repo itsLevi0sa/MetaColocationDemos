@@ -23,6 +23,13 @@ namespace MetaColocationDemos.OSC
         private const string LeftWristJointName = "Wrist_L";
         private const string RightWristJointName = "Wrist_R";
 
+        // Joint movement doesn't need a fresh OSC message every render frame (72-90Hz on Quest) to look
+        // smooth - sending this often just burns CPU/GC on repeated UDP sends for no visible benefit.
+        private const float UpdateRateHz = 30f;
+        private const float UpdateInterval = 1f / UpdateRateHz;
+
+        private float _timeSinceLastUpdate;
+
         [Tooltip("Sends the joint OSC messages - lives on the OSCMessaging object; wired here rather than " +
                  "required on this GameObject so OSC transport config stays separate from spawn coordination.")]
         [SerializeField] private OSCTransmitter transmitter;
@@ -39,6 +46,10 @@ namespace MetaColocationDemos.OSC
             public string Name;
             public Transform Source;
             public Transform Cube;
+            // Built once at spawn time, since these never change for a given player+joint - rebuilding
+            // them by string interpolation on every single send was wasted work and GC garbage.
+            public string PositionAddress;
+            public string RotationAddress;
         }
 
         private class AvatarRig
@@ -64,6 +75,10 @@ namespace MetaColocationDemos.OSC
 
         private void LateUpdate()
         {
+            _timeSinceLastUpdate += Time.deltaTime;
+            if (_timeSinceLastUpdate < UpdateInterval) return;
+            _timeSinceLastUpdate -= UpdateInterval;
+
             // Runs after Animation Rigging/pose-apply updates every avatar's joints for this frame.
             var snapshot = debugView != null ? new List<JointOscDebugView.PlayerValues>() : null;
 
@@ -148,7 +163,15 @@ namespace MetaColocationDemos.OSC
 
                 cubeInstance.GetComponent<NetworkObject>().Spawn();
 
-                rig.Bindings.Add(new JointBinding { Name = jointName, Source = source, Cube = cubeInstance.transform });
+                var baseAddress = $"/Player_{ownerClientId}_Joint_{jointName}";
+                rig.Bindings.Add(new JointBinding
+                {
+                    Name = jointName,
+                    Source = source,
+                    Cube = cubeInstance.transform,
+                    PositionAddress = $"{baseAddress}/position",
+                    RotationAddress = $"{baseAddress}/rotation",
+                });
             }
 
             _rigsByOwnerClientId[ownerClientId] = rig;
@@ -169,7 +192,7 @@ namespace MetaColocationDemos.OSC
 
                 binding.Cube.SetPositionAndRotation(position, rotation);
 
-                playerValues.Joints.Add(SendJoint(rig.OwnerClientId, binding.Name, position, rotation));
+                playerValues.Joints.Add(SendJoint(binding, position, rotation));
             }
 
             return playerValues;
@@ -186,24 +209,20 @@ namespace MetaColocationDemos.OSC
             return root.TransformPoint(local);
         }
 
-        private JointOscDebugView.JointValue SendJoint(ulong ownerClientId, string jointName, Vector3 position, Quaternion rotation)
+        private JointOscDebugView.JointValue SendJoint(JointBinding binding, Vector3 position, Quaternion rotation)
         {
-            var baseAddress = $"/Player_{ownerClientId}_Joint_{jointName}";
-            var positionAddress = $"{baseAddress}/position";
-            var rotationAddress = $"{baseAddress}/rotation";
-
-            transmitter.Send(OSCMessage.Create(positionAddress,
+            transmitter.Send(OSCMessage.Create(binding.PositionAddress,
                 OSCValue.Float(position.x), OSCValue.Float(position.y), OSCValue.Float(position.z)));
 
-            transmitter.Send(OSCMessage.Create(rotationAddress,
+            transmitter.Send(OSCMessage.Create(binding.RotationAddress,
                 OSCValue.Float(rotation.x), OSCValue.Float(rotation.y), OSCValue.Float(rotation.z), OSCValue.Float(rotation.w)));
 
             return new JointOscDebugView.JointValue
             {
-                Joint = jointName,
-                PositionAddress = positionAddress,
+                Joint = binding.Name,
+                PositionAddress = binding.PositionAddress,
                 Position = position,
-                RotationAddress = rotationAddress,
+                RotationAddress = binding.RotationAddress,
                 // Same order as the floats actually sent above - x, y, z, w.
                 Rotation = new Vector4(rotation.x, rotation.y, rotation.z, rotation.w),
             };

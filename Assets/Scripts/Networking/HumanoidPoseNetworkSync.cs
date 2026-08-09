@@ -19,6 +19,13 @@ namespace MetaColocationDemos.Networking
     [RequireComponent(typeof(NetworkObject))]
     public class HumanoidPoseNetworkSync : NetworkBehaviour
     {
+        // Body movement doesn't need a fresh sample every render frame (72-90Hz on Quest) to look smooth -
+        // sending this often just burns CPU/GC on repeated NetworkVariable writes for no visible benefit.
+        private const float SendRateHz = 30f;
+        private const float SendInterval = 1f / SendRateHz;
+
+        private float _timeSinceLastSend;
+
         /// <summary>
         /// Fires on every machine, once per avatar, whenever any NetworkedVRUser instance spawns/despawns -
         /// not just the local client's own. NetworkedVRUser is spawned per connecting client at runtime (see
@@ -108,6 +115,10 @@ namespace MetaColocationDemos.Networking
         private void LateUpdate()
         {
             if (!IsOwner || _poseHandler == null) return;
+
+            _timeSinceLastSend += Time.deltaTime;
+            if (_timeSinceLastSend < SendInterval) return;
+            _timeSinceLastSend -= SendInterval;
 
             // LateUpdate so this runs after RigBuilder (Animation Rigging evaluates in LateUpdate) has
             // applied this frame's retargeted body-tracking pose to the Animator.
