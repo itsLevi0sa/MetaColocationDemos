@@ -41,6 +41,11 @@ namespace MetaColocationDemos.OSC
                  "Inspector, for debugging. Leave unassigned to skip building the snapshot entirely.")]
         [SerializeField] private JointOscDebugView debugView;
 
+        [Tooltip("Turn off to skip the actual OSC network sends (JointCubes still spawn and update locally, " +
+                 "and the debug view still populates) - lets you A/B the runtime cost of OSC traffic itself " +
+                 "on a Quest build.")]
+        [SerializeField] private bool sendOscMessages = true;
+
         private class JointBinding
         {
             public string Name;
@@ -211,11 +216,14 @@ namespace MetaColocationDemos.OSC
 
         private JointOscDebugView.JointValue SendJoint(JointBinding binding, Vector3 position, Quaternion rotation)
         {
-            transmitter.Send(OSCMessage.Create(binding.PositionAddress,
-                OSCValue.Float(position.x), OSCValue.Float(position.y), OSCValue.Float(position.z)));
+            if (sendOscMessages)
+            {
+                transmitter.Send(OSCMessage.Create(binding.PositionAddress,
+                    OSCValue.Float(position.x), OSCValue.Float(position.y), OSCValue.Float(position.z)));
 
-            transmitter.Send(OSCMessage.Create(binding.RotationAddress,
-                OSCValue.Float(rotation.x), OSCValue.Float(rotation.y), OSCValue.Float(rotation.z), OSCValue.Float(rotation.w)));
+                transmitter.Send(OSCMessage.Create(binding.RotationAddress,
+                    OSCValue.Float(rotation.x), OSCValue.Float(rotation.y), OSCValue.Float(rotation.z), OSCValue.Float(rotation.w)));
+            }
 
             return new JointOscDebugView.JointValue
             {

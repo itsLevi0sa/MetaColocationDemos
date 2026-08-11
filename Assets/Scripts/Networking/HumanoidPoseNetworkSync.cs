@@ -8,9 +8,10 @@ namespace MetaColocationDemos.Networking
 {
     /// <summary>
     /// Networks the humanoid body pose that OVRBody + RetargetingLayer (Movement SDK) drive locally on the
-    /// owning client. NetworkTransform on this rig's root only ever replicates the (static) container
-    /// transform - all the real motion from body tracking lives in the Animator's individual humanoid
-    /// bones, which body tracking already positions in world space, independent of the container.
+    /// owning client - the bone-level motion (Hips, Spine, hands, etc.), not the rig's container position.
+    /// Container position/rotation is a separate concern, replicated by NetworkTransform and driven by
+    /// LocalCameraRigAnchor (owner-only) - see that class for why it has to be network-synced from the
+    /// owner rather than computed locally by every viewer.
     ///
     /// The owner captures its Animator's HumanPose every frame and writes it to a NetworkVariable; every
     /// other client applies the received pose directly to its own copy's Animator instead of running its

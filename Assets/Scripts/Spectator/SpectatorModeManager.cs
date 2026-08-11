@@ -33,9 +33,10 @@ namespace MetaColocationDemos.Spectator
                  "the spectator client on connect, so their local movement is what gets replicated.")]
         [SerializeField] private NetworkObject spectatorNetworkObject;
 
-        [Tooltip("The NetworkedVRUser prefab (with NetworkObject + OwnerNetworkTransform, registered in " +
-                 "DefaultNetworkPrefabs) to spawn for each connecting VR client, owned by that client so " +
-                 "their local avatar movement is what gets replicated.")]
+        [Tooltip("The NetworkedVRUser prefab (registered in DefaultNetworkPrefabs) to spawn for each " +
+                 "connecting VR client. Bone-level pose is replicated via HumanoidPoseNetworkSync; the " +
+                 "container's own position/rotation is replicated by NetworkTransform, sourced from the " +
+                 "owner's LocalCameraRigAnchor so it includes that owner's colocation alignment.")]
         [SerializeField] private GameObject vrUserPrefab;
 
         public static readonly HashSet<ulong> SpectatorClientIds = new();
