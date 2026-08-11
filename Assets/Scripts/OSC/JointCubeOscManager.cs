@@ -168,7 +168,7 @@ namespace MetaColocationDemos.OSC
 
                 cubeInstance.GetComponent<NetworkObject>().Spawn();
 
-                var baseAddress = $"/Player_{ownerClientId}_Joint_{jointName}";
+                var baseAddress = $"/Player_{ownerClientId}/Joint_{jointName}";
                 rig.Bindings.Add(new JointBinding
                 {
                     Name = jointName,
