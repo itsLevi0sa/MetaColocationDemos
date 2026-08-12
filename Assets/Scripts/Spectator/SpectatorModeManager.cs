@@ -22,6 +22,12 @@ namespace MetaColocationDemos.Spectator
                  "Leave off to auto-detect based on whether an XR device is active.")]
         [SerializeField] private bool forceSpectatorMode;
 
+        [Tooltip("When running as a ParrelSync clone, connect as a VR user (skip spectator auto-detection) " +
+                 "even though no XR device is active - lets the original instance (with a real spectator " +
+                 "device, e.g. a Leap Motion controller) and a clone act as two independent test clients " +
+                 "without needing a headset on either. Overridden by forceSpectatorMode if that's also set.")]
+        [SerializeField] private bool forceVrUserModeInParrelSyncClone = true;
+
         [Tooltip("The [BuildingBlock] Camera Rig object to disable when running as a spectator, " +
                  "so it doesn't compete with the spectator camera.")]
         [SerializeField] private GameObject vrCameraRig;
@@ -45,7 +51,8 @@ namespace MetaColocationDemos.Spectator
 
         private void Start()
         {
-            IsLocalClientSpectator = forceSpectatorMode || !UnityEngine.XR.XRSettings.isDeviceActive;
+            var forcedVrUser = !forceSpectatorMode && forceVrUserModeInParrelSyncClone && IsRunningAsParrelSyncClone();
+            IsLocalClientSpectator = forceSpectatorMode || (!forcedVrUser && !UnityEngine.XR.XRSettings.isDeviceActive);
 
             if (IsLocalClientSpectator)
             {
@@ -55,6 +62,11 @@ namespace MetaColocationDemos.Spectator
 
                 if (vrCameraRig != null) vrCameraRig.SetActive(false);
                 if (spectatorCamera != null) spectatorCamera.gameObject.SetActive(true);
+            }
+            else if (forcedVrUser)
+            {
+                Debug.Log($"{nameof(SpectatorModeManager)}: connecting as a VR user (ParrelSync clone override - " +
+                          "no XR device detected, but forceVrUserModeInParrelSyncClone forced non-spectator).");
             }
 
             // ConnectionApproval must be explicitly enabled, otherwise the callback below is never invoked
@@ -71,6 +83,20 @@ namespace MetaColocationDemos.Spectator
             {
                 NetworkManager.Singleton.OnClientConnectedCallback -= HandOwnershipToConnectingClient;
             }
+        }
+
+        /// <summary>
+        /// ClonesManager is an Editor-only ParrelSync type (lives under an Editor/ folder), so it can't be
+        /// referenced from player builds - this always returns false there, leaving forceSpectatorMode/XR
+        /// auto-detection as the only options outside the Editor, same as before this override existed.
+        /// </summary>
+        private static bool IsRunningAsParrelSyncClone()
+        {
+#if UNITY_EDITOR
+            return ParrelSync.ClonesManager.IsClone();
+#else
+            return false;
+#endif
         }
 
         /// <summary>
