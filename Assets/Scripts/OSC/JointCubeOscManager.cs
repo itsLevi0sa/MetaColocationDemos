@@ -18,12 +18,10 @@ namespace MetaColocationDemos.OSC
     /// </summary>
     public class JointCubeOscManager : MonoBehaviour
     {
-        private const string HipsJointName = "Hips";
+        private const string RootJointName = "Root";
         private const string HeadJointName = "Head";
         private const string LeftWristJointName = "Wrist_L";
         private const string RightWristJointName = "Wrist_R";
-        private const string LeftFootJointName = "Foot_L";
-        private const string RightFootJointName = "Foot_R";
 
         // Joint movement doesn't need a fresh OSC message every render frame (72-90Hz on Quest) to look
         // smooth - sending this often just burns CPU/GC on repeated UDP sends for no visible benefit.
@@ -62,6 +60,7 @@ namespace MetaColocationDemos.OSC
         private class AvatarRig
         {
             public ulong OwnerClientId;
+            public Transform AvatarRoot;
             public readonly List<JointBinding> Bindings = new();
         }
 
@@ -145,15 +144,13 @@ namespace MetaColocationDemos.OSC
 
             var joints = new (string Name, Transform Source)[]
             {
-                (HipsJointName, animator.GetBoneTransform(HumanBodyBones.Hips)),
+                (RootJointName, animator.GetBoneTransform(HumanBodyBones.Hips)),
                 (HeadJointName, animator.GetBoneTransform(HumanBodyBones.Head)),
                 (LeftWristJointName, animator.GetBoneTransform(HumanBodyBones.LeftHand)),
                 (RightWristJointName, animator.GetBoneTransform(HumanBodyBones.RightHand)),
-                (LeftFootJointName, animator.GetBoneTransform(HumanBodyBones.LeftFoot)),
-                (RightFootJointName, animator.GetBoneTransform(HumanBodyBones.RightFoot)),
             };
 
-            var rig = new AvatarRig { OwnerClientId = ownerClientId };
+            var rig = new AvatarRig { OwnerClientId = ownerClientId, AvatarRoot = avatarRoot };
 
             foreach (var (jointName, source) in joints)
             {
@@ -164,7 +161,9 @@ namespace MetaColocationDemos.OSC
                     continue;
                 }
 
-                var cubeInstance = Instantiate(jointCubePrefab, source.position, source.rotation, transform);
+                var initialPosition = jointName == RootJointName ? ProjectToFloor(avatarRoot, source.position) : source.position;
+
+                var cubeInstance = Instantiate(jointCubePrefab, initialPosition, source.rotation, transform);
                 cubeInstance.name = $"JointCube_Player{ownerClientId}_{jointName}";
 
                 cubeInstance.GetComponent<NetworkObject>().Spawn();
@@ -191,7 +190,9 @@ namespace MetaColocationDemos.OSC
             {
                 if (binding.Cube == null || binding.Source == null) continue;
 
-                var position = binding.Source.position;
+                var position = binding.Name == RootJointName
+                    ? ProjectToFloor(rig.AvatarRoot, binding.Source.position)
+                    : binding.Source.position;
                 var rotation = binding.Source.rotation;
 
                 binding.Cube.SetPositionAndRotation(position, rotation);
@@ -200,6 +201,17 @@ namespace MetaColocationDemos.OSC
             }
 
             return playerValues;
+        }
+
+        /// <summary>
+        /// Flattens a world position onto the avatar root's local Y=0 plane - the floor, since
+        /// NetworkedVRUser sits at the same floor-level origin as the Camera Rig (Floor tracking origin).
+        /// </summary>
+        private static Vector3 ProjectToFloor(Transform root, Vector3 worldPosition)
+        {
+            var local = root.InverseTransformPoint(worldPosition);
+            local.y = 0f;
+            return root.TransformPoint(local);
         }
 
         private JointOscDebugView.JointValue SendJoint(JointBinding binding, Vector3 position, Quaternion rotation)
