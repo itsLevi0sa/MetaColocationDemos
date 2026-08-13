@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Leap;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -35,6 +36,20 @@ namespace MetaColocationDemos.Spectator
         [Tooltip("The camera (with SpectatorFlyCamera) to enable when running as a spectator.")]
         [SerializeField] private Camera spectatorCamera;
 
+        [Tooltip("The LeapServiceProvider on 'Service Provider Desktop' (NetworkedPCUser), enabled only for " +
+                 "the spectator. It defaults to disabled in the scene: on Android, LeapServiceProvider.OnEnable() " +
+                 "calls AndroidServiceBinder.Bind() and Update() then retries connecting to a Leap service that " +
+                 "will never exist on a Quest - leaving it enabled by default meant every VR client's build was " +
+                 "paying for a doomed native service-bind + reconnect loop on every play session, every frame.")]
+        [SerializeField] private LeapProvider spectatorLeapProvider;
+
+        [Tooltip("The Ultraleap 'Physical Hands Manager' under NetworkedPCUser, enabled only for the " +
+                 "spectator. It defaults to disabled in the scene: its OnEnable() starts a permanent " +
+                 "per-FixedUpdate physics coroutine (hand-contact simulation) regardless of whether its " +
+                 "input provider is actually enabled or connected, so leaving it active by default meant " +
+                 "every VR client's build was running that hand-contact physics simulation for nobody's hands.")]
+        [SerializeField] private Behaviour spectatorPhysicalHandsManager;
+
         [Tooltip("The NetworkObject on the spectator rig (e.g. NetworkedPCUser) that should be handed to " +
                  "the spectator client on connect, so their local movement is what gets replicated.")]
         [SerializeField] private NetworkObject spectatorNetworkObject;
@@ -62,11 +77,29 @@ namespace MetaColocationDemos.Spectator
 
                 if (vrCameraRig != null) vrCameraRig.SetActive(false);
                 if (spectatorCamera != null) spectatorCamera.gameObject.SetActive(true);
+                // Defaults disabled in the scene (see spectatorLeapProvider tooltip) - only the actual
+                // spectator, who might have real Leap hardware, should ever turn this on.
+                if (spectatorLeapProvider != null) spectatorLeapProvider.enabled = true;
+                // Defaults disabled in the scene (see spectatorPhysicalHandsManager tooltip) - same reasoning.
+                if (spectatorPhysicalHandsManager != null) spectatorPhysicalHandsManager.enabled = true;
             }
-            else if (forcedVrUser)
+            else
             {
-                Debug.Log($"{nameof(SpectatorModeManager)}: connecting as a VR user (ParrelSync clone override - " +
-                          "no XR device detected, but forceVrUserModeInParrelSyncClone forced non-spectator).");
+                if (forcedVrUser)
+                {
+                    Debug.Log($"{nameof(SpectatorModeManager)}: connecting as a VR user (ParrelSync clone override - " +
+                              "no XR device detected, but forceVrUserModeInParrelSyncClone forced non-spectator).");
+                }
+
+                // NetworkedPCUser's Main Camera (+ AudioListener) defaults to active in the scene - spectator
+                // mode turns it on above, but nothing previously turned it back off for non-spectators, so it
+                // sat active alongside every VR user's own camera rig (duplicate AudioListener warning, wasted
+                // render).
+                if (spectatorCamera != null) spectatorCamera.gameObject.SetActive(false);
+                // Already disabled by default in the scene - set explicitly anyway so this doesn't silently
+                // regress if that scene default ever changes.
+                if (spectatorLeapProvider != null) spectatorLeapProvider.enabled = false;
+                if (spectatorPhysicalHandsManager != null) spectatorPhysicalHandsManager.enabled = false;
             }
 
             // ConnectionApproval must be explicitly enabled, otherwise the callback below is never invoked

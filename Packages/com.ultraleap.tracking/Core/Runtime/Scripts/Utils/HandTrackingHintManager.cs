@@ -23,7 +23,13 @@ namespace Leap
         /// <summary>
         /// Capture the values in UltraleapSettings and set up the setting of those hints when the first device is discovered
         /// </summary>
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        // Not auto-run via [RuntimeInitializeOnLoadMethod] anymore - this project never configures any
+        // startupHints and never calls the public hint APIs below, but leaving this attribute in place meant
+        // every scene load (regardless of whether that scene even has a LeapServiceProvider) unconditionally
+        // created its own separate LeapC Controller/Connection - starting a persistent native "LeapC Worker"
+        // background thread for the app's entire lifetime, on every build from this project. That ran
+        // completely independently of (and wasn't stopped by) disabling LeapServiceProvider/PhysicalHandsManager
+        // for non-spectator clients, since this is a static initializer outside the scene's component graph.
         static void StartupHints()
         {
             currentHints = UltraleapSettings.Instance.startupHints.ToList();

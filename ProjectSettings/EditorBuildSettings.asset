@@ -14,7 +14,7 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/Scenes/ColocationBasicDemoWithSpectator.unity
     guid: dbe25943e6086db44aaebb81ab648356
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/ColocationBasicDemoWithSpectatorOSC.unity
     guid: a539e3cde0753e6438e9062c20410294
   - enabled: 1

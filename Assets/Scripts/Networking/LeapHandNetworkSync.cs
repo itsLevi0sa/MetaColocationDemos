@@ -63,12 +63,6 @@ namespace MetaColocationDemos.Networking
 
         private float _timeSinceLastSend;
 
-        // TODO(debug): temporary tracked-state change logging - remove once ghost hands are confirmed working.
-        private bool _loggedLeftTrackedOwner;
-        private bool _loggedRightTrackedOwner;
-        private bool _loggedLeftTrackedRemote;
-        private bool _loggedRightTrackedRemote;
-
         private void Awake()
         {
             _networkedHands = new NetworkVariable<LeapHandsData>(
@@ -82,12 +76,6 @@ namespace MetaColocationDemos.Networking
 
         public override void OnNetworkSpawn()
         {
-            // TODO(debug): temporary - remove once ghost hands are confirmed working on non-owners.
-            Debug.Log($"{nameof(LeapHandNetworkSync)}: OnNetworkSpawn on '{gameObject.name}', IsOwner={IsOwner}, " +
-                      $"localLeapProvider={(localLeapProvider != null ? localLeapProvider.name : "null")}, " +
-                      $"leftHandModel={(leftHandModel != null ? leftHandModel.name : "null")}, " +
-                      $"rightHandModel={(rightHandModel != null ? rightHandModel.name : "null")}.");
-
             if (!IsOwner)
             {
                 // A remote copy must not let its own (device-less) LeapProvider drive these hand models -
@@ -129,20 +117,6 @@ namespace MetaColocationDemos.Networking
             var left = localLeapProvider.GetHand(Chirality.Left);
             var right = localLeapProvider.GetHand(Chirality.Right);
 
-            // TODO(debug): temporary - remove once ghost hands are confirmed working on non-owners.
-            if ((left != null) != _loggedLeftTrackedOwner)
-            {
-                _loggedLeftTrackedOwner = left != null;
-                Debug.Log($"{nameof(LeapHandNetworkSync)} (owner): left hand tracked={_loggedLeftTrackedOwner} " +
-                          $"(provider={localLeapProvider.name}).");
-            }
-            if ((right != null) != _loggedRightTrackedOwner)
-            {
-                _loggedRightTrackedOwner = right != null;
-                Debug.Log($"{nameof(LeapHandNetworkSync)} (owner): right hand tracked={_loggedRightTrackedOwner} " +
-                          $"(provider={localLeapProvider.name}).");
-            }
-
             var data = new LeapHandsData
             {
                 LeftTracked = left != null,
@@ -170,18 +144,6 @@ namespace MetaColocationDemos.Networking
 
         private void ApplyHands(LeapHandsData data)
         {
-            // TODO(debug): temporary - remove once ghost hands are confirmed working on non-owners.
-            if (data.LeftTracked != _loggedLeftTrackedRemote)
-            {
-                _loggedLeftTrackedRemote = data.LeftTracked;
-                Debug.Log($"{nameof(LeapHandNetworkSync)} (remote): received left hand tracked={_loggedLeftTrackedRemote}.");
-            }
-            if (data.RightTracked != _loggedRightTrackedRemote)
-            {
-                _loggedRightTrackedRemote = data.RightTracked;
-                Debug.Log($"{nameof(LeapHandNetworkSync)} (remote): received right hand tracked={_loggedRightTrackedRemote}.");
-            }
-
             ApplyHand(leftHandModel, _leftVectorHand, _leftHandBuffer, data.LeftTracked, data.LeftHandBytes);
             ApplyHand(rightHandModel, _rightVectorHand, _rightHandBuffer, data.RightTracked, data.RightHandBytes);
         }
@@ -212,36 +174,9 @@ namespace MetaColocationDemos.Networking
             {
                 model.InitHand();
                 model.BeginHand();
-                // TODO(debug): temporary - remove once ghost hands are confirmed working on non-owners.
-                Debug.Log($"{nameof(LeapHandNetworkSync)} (remote): applying '{model.name}', " +
-                          $"activeInHierarchy={model.gameObject.activeInHierarchy}, palmPos={vectorHand.palmPos}, " +
-                          $"renderers enabled={CountEnabledRenderers(model)}, " +
-                          $"ancestorChain={DescribeAncestorActiveChain(model.transform)}.");
             }
 
             if (model.gameObject.activeInHierarchy) model.UpdateHandWithEvent();
-        }
-
-        // TODO(debug): temporary - remove once ghost hands are confirmed working on non-owners.
-        private static int CountEnabledRenderers(HandModelBase model)
-        {
-            var count = 0;
-            foreach (var renderer in model.GetComponentsInChildren<Renderer>(true))
-            {
-                if (renderer.enabled) count++;
-            }
-            return count;
-        }
-
-        // TODO(debug): temporary - remove once ghost hands are confirmed working on non-owners.
-        private static string DescribeAncestorActiveChain(Transform leaf)
-        {
-            var description = "";
-            for (var t = leaf; t != null; t = t.parent)
-            {
-                description += $"{t.gameObject.name}(active={t.gameObject.activeSelf}) < ";
-            }
-            return description;
         }
     }
 }
