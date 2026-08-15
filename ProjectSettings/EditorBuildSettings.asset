@@ -14,9 +14,21 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/Scenes/ColocationBasicDemoWithSpectator.unity
     guid: dbe25943e6086db44aaebb81ab648356
-  - enabled: 1
+  - enabled: 0
     path: Assets/Scenes/ColocationBasicDemoWithSpectatorOSC.unity
     guid: a539e3cde0753e6438e9062c20410294
+  - enabled: 1
+    path: Assets/Scenes/Colocation_Setup.unity
+    guid: 3a014a0749437174faef36f29c41fb86
+  - enabled: 1
+    path: Assets/Scenes/Environment.unity
+    guid: 9b5d79fe6a4c81e4c89bdf71aebde42e
+  - enabled: 1
+    path: Assets/Scenes/Colocation_VR_Rig.unity
+    guid: 4290ff84243701540a467370f536474c
+  - enabled: 1
+    path: Assets/Scenes/Colocation_PC_Rig.unity
+    guid: d3478d236b7434f44bff25df9c94c253
   m_configObjects:
     Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 5ad317c36096cc8458d4f1cfaf449337,
       type: 2}

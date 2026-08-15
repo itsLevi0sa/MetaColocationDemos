@@ -22,9 +22,6 @@ namespace MetaColocationDemos.Spectator
     /// </summary>
     public class SpectatorNameTagFollower : MonoBehaviour
     {
-        [Tooltip("The spectator rig (NetworkedPCUser) to follow when the local client is a spectator.")]
-        [SerializeField] private Transform spectatorRig;
-
         [SerializeField] private float heightOffset = 0.3f;
 
         private const float PositionThreshold = 0.01f;
@@ -32,6 +29,8 @@ namespace MetaColocationDemos.Spectator
         private NetworkTransform _ownNameTagTransform;
         private Transform _centerEye;
         private bool _lookedUpCenterEye;
+        private Transform _spectatorRig;
+        private bool _lookedUpSpectatorRig;
         private Vector3 _lastSentPosition;
 
         private void FixedUpdate()
@@ -54,7 +53,25 @@ namespace MetaColocationDemos.Spectator
 
         private Transform GetFollowTarget()
         {
-            if (SpectatorModeManager.IsLocalClientSpectator) return spectatorRig;
+            if (SessionManager.IsLocalClientSpectator)
+            {
+                if (!_lookedUpSpectatorRig)
+                {
+                    _lookedUpSpectatorRig = true;
+                    // NetworkedPCUser is spawned at runtime (see SessionManager), so its instance name
+                    // is "NetworkedPCUser(Clone)", not "NetworkedPCUser" - look it up by the (otherwise
+                    // unused) OwnerNetworkTransform type instead of by name, same IsOwner filter as
+                    // FindOwnNameTagTransform below picks the local client's own instance among any others.
+                    foreach (var rig in FindObjectsByType<OwnerNetworkTransform>(FindObjectsSortMode.None))
+                    {
+                        if (!rig.IsOwner) continue;
+                        _spectatorRig = rig.transform;
+                        break;
+                    }
+                }
+
+                return _spectatorRig;
+            }
 
             if (!_lookedUpCenterEye)
             {

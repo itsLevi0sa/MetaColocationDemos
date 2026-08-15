@@ -33,10 +33,9 @@ namespace MetaColocationDemos.Networking
                 return;
             }
 
-            // includeInactive: true - SpectatorModeManager disables the Camera Rig entirely on a spectator
-            // client, but its Transform still exists and stays put (frozen at its scene-authored position,
-            // since nothing ever tracks/moves it there) - a reasonable stand-in for a spectator, who was
-            // never going to be physically colocated in the first place.
+            // includeInactive: true - a spectator client never loads Colocation_VR_Rig at all (see
+            // SessionManager), so there's no Camera Rig object here to find regardless; this just guards
+            // against finding nothing and falling through to the warning below.
             var ovrCameraRig = FindObjectOfType<OVRCameraRig>(includeInactive: true);
             if (ovrCameraRig == null)
             {

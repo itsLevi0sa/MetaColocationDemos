@@ -23,8 +23,12 @@ namespace MetaColocationDemos.Networking
                  "every connected Quest user at once, including this one.")]
         [SerializeField] private bool passthroughEnabled = true;
 
-        [Tooltip("The [BuildingBlock] Passthrough layer to enable/disable on this device.")]
-        [SerializeField] private OVRPassthroughLayer passthroughLayer;
+        // [BuildingBlock] Passthrough lives in the VR-only Colocation_VR_Rig scene, loaded locally and only
+        // for VR clients - it won't exist for a spectator, and isn't loaded yet when this object's own
+        // Awake() runs, so it's looked up lazily instead of through a (cross-scene, unsupported) serialized
+        // reference. Not cached: a failed lookup (e.g. spectator client, or VR rig not loaded yet) should
+        // retry on the next toggle rather than staying null forever.
+        private OVRPassthroughLayer PassthroughLayer => FindObjectOfType<OVRPassthroughLayer>();
 
         private bool _lastKnownValue;
         private bool _handlersRegistered;
@@ -36,7 +40,7 @@ namespace MetaColocationDemos.Networking
         }
 
         // NetworkManager.Singleton is only guaranteed to be set once NetworkManager's own Awake() has run,
-        // and Awake-vs-Awake ordering between components isn't reliable - see SpectatorModeManager for the
+        // and Awake-vs-Awake ordering between components isn't reliable - see SessionManager for the
         // same reasoning. Start() is safe since all Awake() calls finish first.
         private void Start()
         {
@@ -144,7 +148,8 @@ namespace MetaColocationDemos.Networking
         {
             _lastKnownValue = value;
             passthroughEnabled = value;
-            if (passthroughLayer != null) passthroughLayer.enabled = value;
+            var layer = PassthroughLayer;
+            if (layer != null) layer.enabled = value;
         }
     }
 }

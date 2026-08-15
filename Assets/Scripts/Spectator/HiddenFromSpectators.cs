@@ -15,7 +15,7 @@ namespace MetaColocationDemos.Spectator
         private void Awake()
         {
             GetComponent<NetworkObject>().CheckObjectVisibility =
-                clientId => !SpectatorModeManager.SpectatorClientIds.Contains(clientId);
+                clientId => !SessionManager.SpectatorClientIds.Contains(clientId);
         }
     }
 }

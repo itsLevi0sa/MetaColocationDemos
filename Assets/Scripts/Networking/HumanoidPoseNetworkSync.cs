@@ -30,7 +30,7 @@ namespace MetaColocationDemos.Networking
         /// <summary>
         /// Fires on every machine, once per avatar, whenever any NetworkedVRUser instance spawns/despawns -
         /// not just the local client's own. NetworkedVRUser is spawned per connecting client at runtime (see
-        /// SpectatorModeManager), so there's no fixed in-scene object a host-side manager (e.g.
+        /// SessionManager), so there's no fixed in-scene object a host-side manager (e.g.
         /// JointCubeOscManager) can reference in the Inspector to discover every connected player's avatar -
         /// this is how it finds them instead. Consumers that only act on the server should check
         /// NetworkManager.Singleton.IsServer themselves, since these fire everywhere a copy exists.

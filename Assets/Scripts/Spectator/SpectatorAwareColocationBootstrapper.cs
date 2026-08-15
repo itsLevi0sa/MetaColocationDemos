@@ -17,7 +17,7 @@ namespace MetaColocationDemos.Spectator
     {
         public override void OnNetworkSpawn()
         {
-            if (SpectatorModeManager.IsLocalClientSpectator)
+            if (SessionManager.IsLocalClientSpectator)
             {
                 Debug.Log($"{nameof(SpectatorAwareColocationBootstrapper)}: local client is a spectator, skipping colocation.");
                 return;
