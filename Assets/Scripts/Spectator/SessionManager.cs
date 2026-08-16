@@ -56,6 +56,11 @@ namespace MetaColocationDemos.Spectator
                  "skipped - e.g. to rule it out as the source of a tracking/rendering issue.")]
         [SerializeField] private bool colocationEnabled = true;
 
+        [Tooltip("Whether Insight Passthrough (see PassthroughNetworkToggle) is allowed to turn on at all. " +
+                 "Uncheck to build/test with Passthrough fully disabled - e.g. to rule out its camera/SLAM " +
+                 "usage as the source of a tracking drift issue.")]
+        [SerializeField] private bool passthroughEnabled = true;
+
         [Tooltip("The NetworkedVRUser prefab (registered in DefaultNetworkPrefabs) to spawn for each " +
                  "connecting VR client. Bone-level pose is replicated via HumanoidPoseNetworkSync; the " +
                  "container's own position/rotation is replicated by NetworkTransform, sourced from the " +
@@ -74,9 +79,12 @@ namespace MetaColocationDemos.Spectator
 
         public static bool IsColocationEnabled { get; private set; }
 
+        public static bool IsPassthroughEnabled { get; private set; }
+
         private IEnumerator Start()
         {
             IsColocationEnabled = colocationEnabled;
+            IsPassthroughEnabled = passthroughEnabled;
 
             if (!forceSpectatorMode)
             {
@@ -156,11 +164,23 @@ namespace MetaColocationDemos.Spectator
                 return;
             }
 
+            // TEMP DIAGNOSTIC: split timing for Instantiate() (GameObject construction + every Awake() in the
+            // prefab, e.g. RetargetingLayer/OVRSkeleton rig setup) vs SpawnWithOwnership() (NGO's spawn
+            // message + every OnNetworkSpawn() callback) - narrows down which half of avatar spawning is
+            // actually expensive, on the server's own copy of the same prefab a connecting client also
+            // instantiates. Remove once the frame-rate collapse is root-caused.
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             var instance = Instantiate(prefab);
+            var instantiateMs = stopwatch.ElapsedMilliseconds;
+
             // destroyWithScene: true, since this is a runtime-spawned session object, not something that
             // should persist across a scene reload the way DontDestroyOnLoad objects would.
+            stopwatch.Restart();
             instance.GetComponent<NetworkObject>().SpawnWithOwnership(clientId, destroyWithScene: true);
-            Debug.Log($"{nameof(SessionManager)}: spawned {prefab.name} owned by client {clientId}.");
+            var spawnMs = stopwatch.ElapsedMilliseconds;
+
+            Debug.Log($"{nameof(SessionManager)}: spawned {prefab.name} owned by client {clientId}. " +
+                      $"[PERF] Instantiate: {instantiateMs}ms, SpawnWithOwnership: {spawnMs}ms.");
         }
 
         private void LoadEnvironmentSceneOnServer()

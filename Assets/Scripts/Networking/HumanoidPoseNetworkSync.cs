@@ -65,6 +65,13 @@ namespace MetaColocationDemos.Networking
 
         private void Awake()
         {
+            // TEMP DIAGNOSTIC: wall-clock timestamp (matches adb logcat's HH:mm:ss.fff format) for exactly
+            // when this avatar's GameObject construction reaches this component - Awake() runs synchronously
+            // as part of Instantiate(), on every device (the spawning server AND every receiving client), so
+            // this pinpoints avatar-instantiation timing precisely enough to correlate against a frame-rate
+            // drop seen in a VrApi logcat capture. Remove once the frame-rate collapse is root-caused.
+            Debug.Log($"[PERF] {nameof(HumanoidPoseNetworkSync)}: Awake at {DateTime.Now:HH:mm:ss.fff} for {name}.");
+
             _networkedPose = new NetworkVariable<HumanoidPoseData>(
                 new HumanoidPoseData { Muscles = new float[HumanTrait.MuscleCount] },
                 writePerm: NetworkVariableWritePermission.Owner);
@@ -72,14 +79,32 @@ namespace MetaColocationDemos.Networking
 
         public override void OnNetworkSpawn()
         {
+            // TEMP DIAGNOSTIC: see the note on Awake() above.
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            Debug.Log($"[PERF] {nameof(HumanoidPoseNetworkSync)}: OnNetworkSpawn starting at {DateTime.Now:HH:mm:ss.fff} " +
+                      $"for {name} (IsOwner: {IsOwner}).");
+
             _animator = GetComponentInChildren<Animator>(true);
             if (_animator == null || !_animator.isHuman)
             {
                 Debug.LogWarning($"{nameof(HumanoidPoseNetworkSync)}: no humanoid Animator found under " +
                                   $"{name}, so there's no pose to sync.");
                 enabled = false;
+
+                // TEMP DIAGNOSTIC: see the note above OnNetworkSpawn's stopwatch.
+                stopwatch.Stop();
+                Debug.Log($"[PERF] {nameof(HumanoidPoseNetworkSync)}: OnNetworkSpawn bailed early (no humanoid " +
+                          $"Animator) for {name} after {stopwatch.ElapsedMilliseconds}ms.");
                 return;
             }
+
+            // TEMP DIAGNOSTIC: disables all rendering for this avatar, on every device (owner and remote
+            // copies alike), to isolate whether the frame-rate collapse seen shortly after connecting is a
+            // render/shader-compile cost (would disappear with rendering off) or a CPU/logic cost (would
+            // persist regardless, since retargeting/animation/networking below still run identically either
+            // way). Remove once the frame-rate collapse is root-caused.
+            foreach (var avatarRenderer in GetComponentsInChildren<Renderer>(true)) avatarRenderer.enabled = false;
+            Debug.Log($"[PERF] {nameof(HumanoidPoseNetworkSync)}: disabled rendering for {name}.");
 
             _poseHandler = new HumanPoseHandler(_animator.avatar, _animator.transform);
 
@@ -105,6 +130,11 @@ namespace MetaColocationDemos.Networking
             // keep driving the Animator locally exactly as they would for a non-networked avatar.
 
             AvatarSpawned?.Invoke(this);
+
+            // TEMP DIAGNOSTIC: see the note on Awake() above.
+            stopwatch.Stop();
+            Debug.Log($"[PERF] {nameof(HumanoidPoseNetworkSync)}: OnNetworkSpawn finished for {name} in " +
+                      $"{stopwatch.ElapsedMilliseconds}ms (ended {DateTime.Now:HH:mm:ss.fff}).");
         }
 
         public override void OnNetworkDespawn()

@@ -1,3 +1,5 @@
+using System.Collections;
+using MetaColocationDemos.Spectator;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
@@ -36,7 +38,21 @@ namespace MetaColocationDemos.Networking
         private void Awake()
         {
             _lastKnownValue = passthroughEnabled;
-            ApplyLocally(passthroughEnabled);
+            StartCoroutine(ApplyInitialState());
+        }
+
+        // TEMP DIAGNOSTIC: SessionManager.IsPassthroughEnabled gates whether Passthrough is allowed to turn
+        // on at all, for isolating whether its camera/SLAM usage is the source of a tracking drift issue.
+        // Colocation_VR_Rig (containing [BuildingBlock] Passthrough) loads asynchronously and may not exist
+        // yet when Awake() runs, so this waits for it (bounded - a spectator client never loads it at all)
+        // rather than applying state immediately, which would just lose the race against the scene's own
+        // default-enabled OVRPassthroughLayer once it actually loads a moment later.
+        private IEnumerator ApplyInitialState()
+        {
+            var deadline = Time.realtimeSinceStartup + 5f;
+            while (PassthroughLayer == null && Time.realtimeSinceStartup < deadline) yield return null;
+
+            ApplyLocally(SessionManager.IsPassthroughEnabled && passthroughEnabled);
         }
 
         // NetworkManager.Singleton is only guaranteed to be set once NetworkManager's own Awake() has run,

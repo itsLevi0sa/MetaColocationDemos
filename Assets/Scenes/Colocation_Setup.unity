@@ -287,6 +287,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   forceSpectatorMode: 0
   colocationEnabled: 0
+  passthroughEnabled: 0
   vrUserPrefab: {fileID: 5014441969086449538, guid: dd50aabdb5d88ec4ea50c48bd15f3419,
     type: 3}
   pcUserPrefab: {fileID: 8339533067020260767, guid: 89b2599aef012f944ba925439c2e3693,
