@@ -19,10 +19,17 @@ namespace MetaColocationDemos.Spectator
     ///
     /// The VR rig (Colocation_VR_Rig) and PC rig (Colocation_PC_Rig) live in their own scenes, additively
     /// loaded locally here based on role - only ever one or the other, never both, so there's no more need
-    /// to toggle a shared rig's visibility. Environment (Directional Light, world geometry) has no
-    /// role-specific content, so every client loads it unconditionally. All of these loads are plain local
-    /// SceneManager calls rather than NetworkManager.SceneManager, so none of them are synced to other
-    /// connected clients.
+    /// to toggle a shared rig's visibility. Neither contains a NetworkObject, so a plain local SceneManager
+    /// load (not NetworkManager.SceneManager) is correct - it's never synced to other connected clients,
+    /// which is exactly what a role-specific scene needs.
+    ///
+    /// Environment (Directional Light, world geometry, including the interactive Cube) is different: the
+    /// Cube is an in-scene-placed NetworkObject, and NGO's scene-sync protocol only reconciles those for
+    /// scenes tracked through NetworkManager.SceneManager - a plain local load left each client to reach
+    /// Environment on its own uncoordinated timeline, so NGO could try to sync the Cube against a client
+    /// that hadn't loaded it yet and fail the spawn outright. Only the server may drive a
+    /// NetworkManager.SceneManager load, and it auto-propagates to every connected client, so this one is
+    /// deferred to OnServerStarted below instead of being loaded unconditionally by everyone here.
     /// </summary>
     public class SessionManager : MonoBehaviour
     {
@@ -44,6 +51,11 @@ namespace MetaColocationDemos.Spectator
                  "Leave off to auto-detect based on whether an XR device is active.")]
         [SerializeField] private bool forceSpectatorMode;
 
+        [Tooltip("Whether VR clients run Meta's colocation/shared-spatial-anchor alignment flow on connect " +
+                 "(see SpectatorAwareColocationBootstrapper). Uncheck to build/test with colocation fully " +
+                 "skipped - e.g. to rule it out as the source of a tracking/rendering issue.")]
+        [SerializeField] private bool colocationEnabled = true;
+
         [Tooltip("The NetworkedVRUser prefab (registered in DefaultNetworkPrefabs) to spawn for each " +
                  "connecting VR client. Bone-level pose is replicated via HumanoidPoseNetworkSync; the " +
                  "container's own position/rotation is replicated by NetworkTransform, sourced from the " +
@@ -60,8 +72,12 @@ namespace MetaColocationDemos.Spectator
 
         public static bool IsLocalClientSpectator { get; private set; }
 
+        public static bool IsColocationEnabled { get; private set; }
+
         private IEnumerator Start()
         {
+            IsColocationEnabled = colocationEnabled;
+
             if (!forceSpectatorMode)
             {
                 yield return WaitForXrDeviceActivation();
@@ -69,8 +85,11 @@ namespace MetaColocationDemos.Spectator
 
             IsLocalClientSpectator = forceSpectatorMode || !UnityEngine.XR.XRSettings.isDeviceActive;
 
-            // No role-specific content, so every client (VR or spectator) loads it the same way.
-            SceneManager.LoadSceneAsync(EnvironmentSceneName, LoadSceneMode.Additive);
+            // Only fires (and therefore only loads Environment) on whichever instance ends up hosting; NGO
+            // propagates that load to every client that connects afterward, so this must NOT also be loaded
+            // locally by clients here - that would just recreate the uncoordinated-timeline problem this is
+            // fixing, on the client side instead of the host side.
+            NetworkManager.Singleton.OnServerStarted += LoadEnvironmentSceneOnServer;
 
             // Loaded locally so NetworkedPCUser's LocalSpectatorCameraAnchor has a Main Camera to attach once
             // it spawns as this client's own instance (see HandOwnershipToConnectingClient below). The
@@ -107,6 +126,7 @@ namespace MetaColocationDemos.Spectator
         {
             if (NetworkManager.Singleton != null)
             {
+                NetworkManager.Singleton.OnServerStarted -= LoadEnvironmentSceneOnServer;
                 NetworkManager.Singleton.OnClientConnectedCallback -= HandOwnershipToConnectingClient;
             }
         }
@@ -141,6 +161,11 @@ namespace MetaColocationDemos.Spectator
             // should persist across a scene reload the way DontDestroyOnLoad objects would.
             instance.GetComponent<NetworkObject>().SpawnWithOwnership(clientId, destroyWithScene: true);
             Debug.Log($"{nameof(SessionManager)}: spawned {prefab.name} owned by client {clientId}.");
+        }
+
+        private void LoadEnvironmentSceneOnServer()
+        {
+            NetworkManager.Singleton.SceneManager.LoadScene(EnvironmentSceneName, LoadSceneMode.Additive);
         }
 
         private void ApprovalCheck(NetworkManager.ConnectionApprovalRequest request, NetworkManager.ConnectionApprovalResponse response)
