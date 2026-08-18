@@ -5,7 +5,7 @@ using UnityEngine.SceneManagement;
 namespace MetaColocationDemos.Spectator
 {
     /// <summary>
-    /// Owner-only: attaches this client's local Main Camera (lives in Colocation_PC_Rig, loaded locally by
+    /// Owner-only: attaches this client's local Main Camera (lives in PCUser, loaded locally by
     /// SessionManager.Start() before this object ever spawns) onto NetworkedPCUser once it's actually
     /// this client's own instance, so the camera renders from wherever SpectatorFlyCamera (also on this
     /// GameObject) drives it via local input. Mirrors LocalCameraRigAnchor's ownership pattern for the VR
@@ -19,7 +19,7 @@ namespace MetaColocationDemos.Spectator
     [RequireComponent(typeof(NetworkObject))]
     public class LocalSpectatorCameraAnchor : NetworkBehaviour
     {
-        private const string PcRigSceneName = "Colocation_PC_Rig";
+        private const string PcRigSceneName = "PCUser";
 
         public override void OnNetworkSpawn()
         {

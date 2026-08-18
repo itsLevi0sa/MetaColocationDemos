@@ -43,7 +43,7 @@ public class LeapMotionRetargeting : MonoBehaviour
         }
     }
 
-    // Runs lazily rather than once in Awake() - the VR rig (Colocation_VR_Rig) is loaded additively at
+    // Runs lazily rather than once in Awake() - the VR rig (VRUser) is loaded additively at
     // runtime by SessionManager, often after this component's Awake() has already run, and re-tries every
     // frame until it succeeds.
     private void ResolveHandAnchors()

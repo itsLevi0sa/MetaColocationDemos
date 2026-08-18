@@ -71,6 +71,17 @@ namespace MetaColocationDemos.Networking
         private HumanPoseHandler _poseHandler;
         private HumanPose _humanPose;
 
+        // Non-owner side only: NetworkVariable has no built-in interpolation (unlike NetworkTransform), so
+        // without this the pose would snap to each new value the instant it arrives - visibly choppy at
+        // SendRateHz against a 72-90Hz render rate. Instead this blends from the previously-received pose
+        // to the latest one over one SendInterval, re-targeting cleanly on every new arrival regardless of
+        // network jitter since t is derived from wall-clock time, not a fixed step count.
+        private HumanoidPoseData _previousPose;
+        private HumanoidPoseData _targetPose;
+        private float _interpolationStartTime;
+        private bool _hasReceivedFirstPose;
+        private float[] _interpolatedMuscles;
+
         private void Awake()
         {
             _musclesBuffer = new float[HumanTrait.MuscleCount];
@@ -107,7 +118,9 @@ namespace MetaColocationDemos.Networking
                 // bone mapping directly via the Transform hierarchy), so disabling it here is safe.
                 _animator.enabled = false;
 
-                _networkedPose.OnValueChanged += (_, newPose) => ApplyPose(newPose);
+                _interpolatedMuscles = new float[HumanTrait.MuscleCount];
+                _previousPose = _targetPose = _networkedPose.Value;
+                _networkedPose.OnValueChanged += (_, newPose) => OnPoseReceived(newPose);
                 ApplyPose(_networkedPose.Value);
             }
             // If IsOwner, there's nothing else to do here - the owner's own OVRBody/RigBuilder/RetargetingLayer
@@ -124,7 +137,19 @@ namespace MetaColocationDemos.Networking
 
         private void LateUpdate()
         {
-            if (!IsOwner || _poseHandler == null) return;
+            if (IsOwner)
+            {
+                SendPoseIfDue();
+            }
+            else
+            {
+                ApplyInterpolatedPose();
+            }
+        }
+
+        private void SendPoseIfDue()
+        {
+            if (_poseHandler == null) return;
 
             _timeSinceLastSend += Time.deltaTime;
             if (_timeSinceLastSend < SendInterval) return;
@@ -159,6 +184,40 @@ namespace MetaColocationDemos.Networking
             _humanPose.bodyPosition = pose.BodyPosition;
             _humanPose.bodyRotation = pose.BodyRotation;
             _humanPose.muscles = pose.Muscles;
+            _poseHandler.SetHumanPose(ref _humanPose);
+        }
+
+        private void OnPoseReceived(HumanoidPoseData newPose)
+        {
+            _previousPose = _targetPose;
+            _targetPose = newPose;
+            _interpolationStartTime = Time.time;
+            _hasReceivedFirstPose = true;
+        }
+
+        private void ApplyInterpolatedPose()
+        {
+            if (!_hasReceivedFirstPose || _poseHandler == null) return;
+
+            var target = _targetPose;
+            var previous = _previousPose;
+            if (target.Muscles == null || target.Muscles.Length != HumanTrait.MuscleCount ||
+                previous.Muscles == null || previous.Muscles.Length != HumanTrait.MuscleCount)
+            {
+                return;
+            }
+
+            var t = Mathf.Clamp01((Time.time - _interpolationStartTime) / SendInterval);
+
+            _humanPose.bodyPosition = Vector3.Lerp(previous.BodyPosition, target.BodyPosition, t);
+            _humanPose.bodyRotation = Quaternion.Slerp(previous.BodyRotation, target.BodyRotation, t);
+
+            for (var i = 0; i < _interpolatedMuscles.Length; i++)
+            {
+                _interpolatedMuscles[i] = Mathf.Lerp(previous.Muscles[i], target.Muscles[i], t);
+            }
+            _humanPose.muscles = _interpolatedMuscles;
+
             _poseHandler.SetHumanPose(ref _humanPose);
         }
     }

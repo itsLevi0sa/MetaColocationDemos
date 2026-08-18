@@ -63,6 +63,24 @@ namespace MetaColocationDemos.Networking
 
         private float _timeSinceLastSend;
 
+        // Non-owner side only: NetworkVariable has no built-in interpolation, so without this the hand would
+        // snap to each newly-decoded pose the instant it arrives - see HumanoidPoseNetworkSync for the same
+        // reasoning applied to body pose. Each side keeps the last two DECODED hands (not raw bytes - VectorHand's
+        // encoding is quantized/compressed, not something that can be blended directly) and Lerps/Slerps
+        // between them; _renderLeftHand/_renderRightHand are the blended result actually fed to the hand models.
+        private readonly Hand _previousLeftHand = new Hand();
+        private readonly Hand _targetLeftHand = new Hand();
+        private readonly Hand _renderLeftHand = new Hand();
+        private readonly Hand _previousRightHand = new Hand();
+        private readonly Hand _targetRightHand = new Hand();
+        private readonly Hand _renderRightHand = new Hand();
+        private bool _previousLeftTracked;
+        private bool _targetLeftTracked;
+        private bool _previousRightTracked;
+        private bool _targetRightTracked;
+        private float _interpolationStartTime;
+        private bool _hasReceivedFirstHands;
+
         private void Awake()
         {
             _networkedHands = new NetworkVariable<LeapHandsData>(
@@ -91,7 +109,7 @@ namespace MetaColocationDemos.Networking
                 DisableHandEnableDisable(leftHandModel);
                 DisableHandEnableDisable(rightHandModel);
 
-                _networkedHands.OnValueChanged += (_, newValue) => ApplyHands(newValue);
+                _networkedHands.OnValueChanged += (_, newValue) => OnHandsReceived(newValue);
                 ApplyHands(_networkedHands.Value);
             }
             // If IsOwner, there's nothing else to do here - the owner's own LeapProvider keeps driving
@@ -108,7 +126,19 @@ namespace MetaColocationDemos.Networking
 
         private void LateUpdate()
         {
-            if (!IsOwner || localLeapProvider == null) return;
+            if (IsOwner)
+            {
+                SendHandsIfDue();
+            }
+            else
+            {
+                ApplyInterpolatedHands();
+            }
+        }
+
+        private void SendHandsIfDue()
+        {
+            if (localLeapProvider == null) return;
 
             _timeSinceLastSend += Time.deltaTime;
             if (_timeSinceLastSend < SendInterval) return;
@@ -142,33 +172,107 @@ namespace MetaColocationDemos.Networking
             _networkedHands.Value = data;
         }
 
+        // Initial snap on spawn only - nothing to interpolate from yet, and _hasReceivedFirstHands stays
+        // false until OnHandsReceived fires for the first real update, so ApplyInterpolatedHands leaves
+        // this alone until then.
         private void ApplyHands(LeapHandsData data)
         {
-            ApplyHand(leftHandModel, _leftVectorHand, _leftHandBuffer, data.LeftTracked, data.LeftHandBytes);
-            ApplyHand(rightHandModel, _rightVectorHand, _rightHandBuffer, data.RightTracked, data.RightHandBytes);
+            ApplyHandSnapshot(leftHandModel, _leftVectorHand, _leftHandBuffer, data.LeftTracked, data.LeftHandBytes);
+            ApplyHandSnapshot(rightHandModel, _rightVectorHand, _rightHandBuffer, data.RightTracked, data.RightHandBytes);
         }
 
-        private static void ApplyHand(HandModelBase model, VectorHand vectorHand, Hand handBuffer, bool tracked, byte[] bytes)
+        private void OnHandsReceived(LeapHandsData data)
+        {
+            // Shift target -> previous before decoding the new target in place, so interpolation always
+            // blends from whatever was last actually shown rather than the pose before that.
+            _previousLeftTracked = _targetLeftTracked;
+            _previousRightTracked = _targetRightTracked;
+            if (_targetLeftTracked) _previousLeftHand.CopyFrom(_targetLeftHand);
+            if (_targetRightTracked) _previousRightHand.CopyFrom(_targetRightHand);
+
+            _targetLeftTracked = data.LeftTracked;
+            _targetRightTracked = data.RightTracked;
+
+            if (_targetLeftTracked && data.LeftHandBytes != null)
+            {
+                _leftVectorHand.ReadBytes(data.LeftHandBytes);
+                _leftVectorHand.Decode(_targetLeftHand);
+            }
+            if (_targetRightTracked && data.RightHandBytes != null)
+            {
+                _rightVectorHand.ReadBytes(data.RightHandBytes);
+                _rightVectorHand.Decode(_targetRightHand);
+            }
+
+            _interpolationStartTime = Time.time;
+            _hasReceivedFirstHands = true;
+        }
+
+        private void ApplyInterpolatedHands()
+        {
+            if (!_hasReceivedFirstHands) return;
+
+            var t = Mathf.Clamp01((Time.time - _interpolationStartTime) / SendInterval);
+            ApplyInterpolatedHand(leftHandModel, _previousLeftHand, _targetLeftHand, _renderLeftHand,
+                                   _previousLeftTracked, _targetLeftTracked, t);
+            ApplyInterpolatedHand(rightHandModel, _previousRightHand, _targetRightHand, _renderRightHand,
+                                   _previousRightTracked, _targetRightTracked, t);
+        }
+
+        private static void ApplyHandSnapshot(HandModelBase model, VectorHand vectorHand, Hand handBuffer, bool tracked, byte[] bytes)
         {
             if (model == null) return;
 
             if (!tracked || bytes == null)
             {
-                model.SetLeapHand(null);
-                if (model.IsTracked) model.FinishHand();
-                // HandEnableDisable is disabled on non-owners (see OnNetworkSpawn), so nothing else will
-                // hide this hand when tracking is lost - do it ourselves.
-                model.gameObject.SetActive(false);
+                HideHand(model);
                 return;
             }
 
+            vectorHand.ReadBytes(bytes);
+            vectorHand.Decode(handBuffer);
+            ShowHand(model, handBuffer);
+        }
+
+        private static void ApplyInterpolatedHand(HandModelBase model, Hand previous, Hand target, Hand render,
+                                                    bool previousTracked, bool targetTracked, float t)
+        {
+            if (model == null) return;
+
+            if (!targetTracked)
+            {
+                HideHand(model);
+                return;
+            }
+
+            // Can't interpolate from "no hand" - snap straight to the target on the first frame it's tracked.
+            if (previousTracked)
+            {
+                LerpHand(previous, target, t, render);
+            }
+            else
+            {
+                render.CopyFrom(target);
+            }
+
+            ShowHand(model, render);
+        }
+
+        private static void HideHand(HandModelBase model)
+        {
+            model.SetLeapHand(null);
+            if (model.IsTracked) model.FinishHand();
+            // HandEnableDisable is disabled on non-owners (see OnNetworkSpawn), so nothing else will hide
+            // this hand when tracking is lost - do it ourselves.
+            model.gameObject.SetActive(false);
+        }
+
+        private static void ShowHand(HandModelBase model, Hand hand)
+        {
             // Same reasoning in reverse - with HandEnableDisable disabled, nothing else will show this hand
             // again once tracking resumes.
             model.gameObject.SetActive(true);
-
-            vectorHand.ReadBytes(bytes);
-            vectorHand.Decode(handBuffer);
-            model.SetLeapHand(handBuffer);
+            model.SetLeapHand(hand);
 
             if (!model.IsTracked)
             {
@@ -177,6 +281,67 @@ namespace MetaColocationDemos.Networking
             }
 
             if (model.gameObject.activeInHierarchy) model.UpdateHandWithEvent();
+        }
+
+        // Mirrors CopyFromOtherExtensions.CopyFrom's field set exactly, just blending positions/rotations
+        // instead of assigning them outright. Fields that don't benefit from interpolation (widths, lengths,
+        // IDs, extended flags) are taken from the target, same as a plain CopyFrom would.
+        private static void LerpHand(Hand from, Hand to, float t, Hand result)
+        {
+            result.Id = to.Id;
+            result.Confidence = to.Confidence;
+            result.GrabStrength = to.GrabStrength;
+            result.Rotation = Quaternion.Slerp(from.Rotation, to.Rotation, t);
+            result.PinchStrength = to.PinchStrength;
+            result.PinchDistance = to.PinchDistance;
+            result.PalmWidth = to.PalmWidth;
+            result.IsLeft = to.IsLeft;
+            result.TimeVisible = to.TimeVisible;
+            result.PalmPosition = Vector3.Lerp(from.PalmPosition, to.PalmPosition, t);
+            result.StabilizedPalmPosition = Vector3.Lerp(from.StabilizedPalmPosition, to.StabilizedPalmPosition, t);
+            result.PalmVelocity = Vector3.Lerp(from.PalmVelocity, to.PalmVelocity, t);
+            result.PalmNormal = Vector3.Slerp(from.PalmNormal, to.PalmNormal, t);
+            result.Direction = Vector3.Slerp(from.Direction, to.Direction, t);
+            result.WristPosition = Vector3.Lerp(from.WristPosition, to.WristPosition, t);
+
+            // Not interpolated - the forearm isn't fed into HandBinder's finger/wrist bones, so a one-frame
+            // snap here whenever a new target arrives isn't perceptible the way finger choppiness would be.
+            result.Arm.CopyFrom(to.Arm);
+
+            for (var i = 0; i < 5; i++)
+            {
+                LerpFinger(from.fingers[i], to.fingers[i], t, result.fingers[i]);
+            }
+        }
+
+        private static void LerpFinger(Finger from, Finger to, float t, Finger result)
+        {
+            for (var i = 0; i < 4; i++)
+            {
+                LerpBone(from.bones[i], to.bones[i], t, result.bones[i]);
+            }
+
+            result.Id = to.Id;
+            result.HandId = to.HandId;
+            result.TimeVisible = to.TimeVisible;
+            result.TipPosition = Vector3.Lerp(from.TipPosition, to.TipPosition, t);
+            result.Direction = Vector3.Slerp(from.Direction, to.Direction, t);
+            result.Width = to.Width;
+            result.Length = to.Length;
+            result.IsExtended = to.IsExtended;
+            result.Type = to.Type;
+        }
+
+        private static void LerpBone(Bone from, Bone to, float t, Bone result)
+        {
+            result.PrevJoint = Vector3.Lerp(from.PrevJoint, to.PrevJoint, t);
+            result.NextJoint = Vector3.Lerp(from.NextJoint, to.NextJoint, t);
+            result.Direction = Vector3.Slerp(from.Direction, to.Direction, t);
+            result.Center = Vector3.Lerp(from.Center, to.Center, t);
+            result.Length = to.Length;
+            result.Width = to.Width;
+            result.Rotation = Quaternion.Slerp(from.Rotation, to.Rotation, t);
+            result.Type = to.Type;
         }
     }
 }

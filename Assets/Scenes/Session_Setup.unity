@@ -285,7 +285,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b6553c156a5eb9c44983c57e30433e0d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  forceSpectatorMode: 1
+  forceSpectatorMode: 0
   colocationEnabled: 1
   passthroughEnabled: 0
   vrUserPrefab: {fileID: 5014441969086449538, guid: dd50aabdb5d88ec4ea50c48bd15f3419,

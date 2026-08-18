@@ -17,7 +17,7 @@ namespace MetaColocationDemos.Spectator
     /// calls in the scene are guaranteed to finish before any Start() runs, and AutoMatchmakingNGO only
     /// calls StartClient()/StartHost() after several awaited async calls, so Start() has plenty of margin.
     ///
-    /// The VR rig (Colocation_VR_Rig) and PC rig (Colocation_PC_Rig) live in their own scenes, additively
+    /// The VR rig (VRUser) and PC rig (PCUser) live in their own scenes, additively
     /// loaded locally here based on role - only ever one or the other, never both, so there's no more need
     /// to toggle a shared rig's visibility. Neither contains a NetworkObject, so a plain local SceneManager
     /// load (not NetworkManager.SceneManager) is correct - it's never synced to other connected clients,
@@ -34,8 +34,8 @@ namespace MetaColocationDemos.Spectator
     public class SessionManager : MonoBehaviour
     {
         private const string EnvironmentSceneName = "Environment";
-        private const string VrRigSceneName = "Colocation_VR_Rig";
-        private const string PcRigSceneName = "Colocation_PC_Rig";
+        private const string VrRigSceneName = "VRUser";
+        private const string PcRigSceneName = "PCUser";
 
         // Meta Quest Link has to negotiate a session with the desktop Oculus runtime before the display
         // subsystem comes up, unlike a real on-device build where OVRManager.isHmdPresent is already true
@@ -47,10 +47,14 @@ namespace MetaColocationDemos.Spectator
 
         private static readonly byte[] SpectatorPayload = { 1 };
 
+        [Header("Editor Settings")]
+
         [Tooltip("Force this client to connect as a spectator, regardless of auto-detection or a ParrelSync " +
                  "clone defaulting to VR (see IsParrelSyncClone) - this always wins. Leave off to auto-detect " +
                  "based on whether an XR device is active.")]
         [SerializeField] private bool forceSpectatorMode;
+
+        [Header("VR Settings")]
 
         [Tooltip("Whether VR clients run Meta's colocation/shared-spatial-anchor alignment flow on connect " +
                  "(see SpectatorAwareColocationBootstrapper). Uncheck to build/test with colocation fully " +
@@ -61,6 +65,8 @@ namespace MetaColocationDemos.Spectator
                  "Uncheck to build/test with Passthrough fully disabled - e.g. to rule out its camera/SLAM " +
                  "usage as the source of a tracking drift issue.")]
         [SerializeField] private bool passthroughEnabled = true;
+
+        [Header("Network Settings")]
 
         [Tooltip("The NetworkedVRUser prefab (registered in DefaultNetworkPrefabs) to spawn for each " +
                  "connecting VR client. Bone-level pose is replicated via HumanoidPoseNetworkSync; the " +

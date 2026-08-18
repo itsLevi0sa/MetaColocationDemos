@@ -33,7 +33,7 @@ namespace MetaColocationDemos.Networking
                 return;
             }
 
-            // includeInactive: true - a spectator client never loads Colocation_VR_Rig at all (see
+            // includeInactive: true - a spectator client never loads VRUser at all (see
             // SessionManager), so there's no Camera Rig object here to find regardless; this just guards
             // against finding nothing and falling through to the warning below.
             var ovrCameraRig = FindObjectOfType<OVRCameraRig>(includeInactive: true);

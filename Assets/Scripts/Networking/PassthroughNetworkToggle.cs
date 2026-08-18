@@ -25,7 +25,7 @@ namespace MetaColocationDemos.Networking
                  "every connected Quest user at once, including this one.")]
         [SerializeField] private bool passthroughEnabled = true;
 
-        // [BuildingBlock] Passthrough lives in the VR-only Colocation_VR_Rig scene, loaded locally and only
+        // [BuildingBlock] Passthrough lives in the VR-only VRUser scene, loaded locally and only
         // for VR clients - it won't exist for a spectator, and isn't loaded yet when this object's own
         // Awake() runs, so it's looked up lazily instead of through a (cross-scene, unsupported) serialized
         // reference. Not cached: a failed lookup (e.g. spectator client, or VR rig not loaded yet) should
@@ -43,7 +43,7 @@ namespace MetaColocationDemos.Networking
 
         // TEMP DIAGNOSTIC: SessionManager.IsPassthroughEnabled gates whether Passthrough is allowed to turn
         // on at all, for isolating whether its camera/SLAM usage is the source of a tracking drift issue.
-        // Colocation_VR_Rig (containing [BuildingBlock] Passthrough) loads asynchronously and may not exist
+        // VRUser (containing [BuildingBlock] Passthrough) loads asynchronously and may not exist
         // yet when Awake() runs, so this waits for it (bounded - a spectator client never loads it at all)
         // rather than applying state immediately, which would just lose the race against the scene's own
         // default-enabled OVRPassthroughLayer once it actually loads a moment later.
