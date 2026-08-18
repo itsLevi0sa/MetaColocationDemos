@@ -38,17 +38,18 @@ namespace MetaColocationDemos.Spectator
         private const string PcRigSceneName = "Colocation_PC_Rig";
 
         // Meta Quest Link has to negotiate a session with the desktop Oculus runtime before the display
-        // subsystem comes up, unlike a real on-device build where XRSettings.isDeviceActive is already
-        // true at boot - a single instantaneous read here can catch it mid-negotiation and misdetect a VR
-        // client as a spectator. That misdetection used to just flip a SetActive toggle in an otherwise
-        // identical shared scene; now it decides which whole rig scene loads, so it's worth a short poll
-        // instead of trusting one read.
+        // subsystem comes up, unlike a real on-device build where OVRManager.isHmdPresent is already true
+        // at boot - a single instantaneous read here can catch it mid-negotiation and misdetect a VR client
+        // as a spectator. That misdetection used to just flip a SetActive toggle in an otherwise identical
+        // shared scene; now it decides which whole rig scene loads, so it's worth a short poll instead of
+        // trusting one read.
         private const float XrDeviceDetectionTimeoutSeconds = 3f;
 
         private static readonly byte[] SpectatorPayload = { 1 };
 
-        [Tooltip("Force this client to connect as a spectator, regardless of auto-detection. " +
-                 "Leave off to auto-detect based on whether an XR device is active.")]
+        [Tooltip("Force this client to connect as a spectator, regardless of auto-detection or a ParrelSync " +
+                 "clone defaulting to VR (see IsParrelSyncClone) - this always wins. Leave off to auto-detect " +
+                 "based on whether an XR device is active.")]
         [SerializeField] private bool forceSpectatorMode;
 
         [Tooltip("Whether VR clients run Meta's colocation/shared-spatial-anchor alignment flow on connect " +
@@ -86,12 +87,36 @@ namespace MetaColocationDemos.Spectator
             IsColocationEnabled = colocationEnabled;
             IsPassthroughEnabled = passthroughEnabled;
 
-            if (!forceSpectatorMode)
+            // A ParrelSync clone editor has no real XR device of its own to detect, so without this it
+            // would always auto-detect as a spectator - making it useless for locally testing a VR client
+            // against the main editor's own instance without a second physical headset. forceSpectatorMode
+            // still wins over this if explicitly set, for whenever a clone genuinely needs to be a spectator.
+            var isParrelSyncClone = IsParrelSyncClone();
+
+            // The original project has no reliable way to tell a real headset apart from Quest Link just
+            // being connected in the background - OVRManager.isHmdPresent can read true here even though a
+            // clone is the one actually meant to be the VR side of a local dual-editor test, which is what
+            // was making both editors load VR. If a clone of this project is currently running, defer to it
+            // and be the spectator regardless of what isHmdPresent reports; if no clone is running, this
+            // falls through to the original device-based auto-detect unchanged, e.g. for solo VR testing
+            // straight from the main editor.
+            var deferToRunningClone = !isParrelSyncClone && IsAnyClonedProjectRunning();
+
+            var skipXrDeviceWait = forceSpectatorMode || isParrelSyncClone || deferToRunningClone;
+
+            if (!skipXrDeviceWait)
             {
                 yield return WaitForXrDeviceActivation();
             }
 
-            IsLocalClientSpectator = forceSpectatorMode || !UnityEngine.XR.XRSettings.isDeviceActive;
+            // OVRManager.isHmdPresent, not the more generic UnityEngine.XR.XRSettings.isDeviceActive: this
+            // project's OpenXR settings have "Initialize XR on Startup" on with both the Meta XR feature AND
+            // Ultraleap Hand Tracking enabled, so pressing Play with only a Leap Motion controller plugged
+            // in (no headset at all) still spins up an OpenXR session and flips isDeviceActive true - it's
+            // "is any XR feature active", not "is a headset present". isHmdPresent checks specifically for a
+            // running display subsystem, which Ultraleap's hand-tracking-only feature never creates.
+            IsLocalClientSpectator = forceSpectatorMode || deferToRunningClone ||
+                                      (!isParrelSyncClone && !OVRManager.isHmdPresent);
 
             // Only fires (and therefore only loads Environment) on whichever instance ends up hosting; NGO
             // propagates that load to every client that connects afterward, so this must NOT also be loaded
@@ -108,7 +133,7 @@ namespace MetaColocationDemos.Spectator
 
             if (IsLocalClientSpectator)
             {
-                Debug.Log($"{nameof(SessionManager)}: connecting as spectator (no XR device detected).");
+                Debug.Log($"{nameof(SessionManager)}: connecting as spectator (no headset detected).");
                 // Read by ApprovalCheck on the server before any networked objects become visible to this client.
                 NetworkManager.Singleton.NetworkConfig.ConnectionData = SpectatorPayload;
             }
@@ -121,10 +146,35 @@ namespace MetaColocationDemos.Spectator
             NetworkManager.Singleton.OnClientConnectedCallback += HandOwnershipToConnectingClient;
         }
 
+        // ParrelSync's ClonesManager lives under an Editor/ folder, so it only exists in editor assemblies -
+        // referencing it directly here would fail to compile for an Android/Quest build, which this file is
+        // also compiled into. The #if keeps this a no-op false outside the editor instead.
+        private static bool IsParrelSyncClone()
+        {
+#if UNITY_EDITOR
+            return ParrelSync.ClonesManager.IsClone();
+#else
+            return false;
+#endif
+        }
+
+        private static bool IsAnyClonedProjectRunning()
+        {
+#if UNITY_EDITOR
+            foreach (var clonePath in ParrelSync.ClonesManager.GetCloneProjectsPath())
+            {
+                if (ParrelSync.ClonesManager.IsCloneProjectRunning(clonePath)) return true;
+            }
+            return false;
+#else
+            return false;
+#endif
+        }
+
         private static IEnumerator WaitForXrDeviceActivation()
         {
             var deadline = Time.realtimeSinceStartup + XrDeviceDetectionTimeoutSeconds;
-            while (!UnityEngine.XR.XRSettings.isDeviceActive && Time.realtimeSinceStartup < deadline)
+            while (!OVRManager.isHmdPresent && Time.realtimeSinceStartup < deadline)
             {
                 yield return null;
             }

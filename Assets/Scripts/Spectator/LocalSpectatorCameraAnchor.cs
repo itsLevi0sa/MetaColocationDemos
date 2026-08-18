@@ -1,5 +1,6 @@
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace MetaColocationDemos.Spectator
 {
@@ -18,19 +19,45 @@ namespace MetaColocationDemos.Spectator
     [RequireComponent(typeof(NetworkObject))]
     public class LocalSpectatorCameraAnchor : NetworkBehaviour
     {
+        private const string PcRigSceneName = "Colocation_PC_Rig";
+
         public override void OnNetworkSpawn()
         {
             if (!IsOwner) return;
 
-            var mainCamera = GameObject.Find("Main Camera");
+            var mainCamera = FindPcRigCamera();
             if (mainCamera == null)
             {
-                Debug.LogWarning($"{nameof(LocalSpectatorCameraAnchor)}: no local Main Camera found " +
-                                  $"(is Colocation_PC_Rig loaded?) - {name} will have no rendering camera.");
+                Debug.LogWarning($"{nameof(LocalSpectatorCameraAnchor)}: no Camera found in the " +
+                                  $"{PcRigSceneName} scene (is it loaded?) - {name} will have no rendering camera.");
                 return;
             }
 
             mainCamera.transform.SetParent(transform, worldPositionStays: false);
+        }
+
+        // Scoped to the PC rig scene specifically, rather than the scene-wide GameObject.Find("Main Camera")
+        // this used to be - any other camera loaded elsewhere and named the same (e.g. a Leap Motion desktop
+        // rig's own bundled camera, which follows Unity's default "Main Camera" naming too) is an equally
+        // valid match for a plain name search and could get grabbed instead, depending on load order.
+        private static Camera FindPcRigCamera()
+        {
+            var scene = SceneManager.GetSceneByName(PcRigSceneName);
+            if (!scene.IsValid())
+            {
+                return null;
+            }
+
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                var camera = root.GetComponentInChildren<Camera>(includeInactive: true);
+                if (camera != null)
+                {
+                    return camera;
+                }
+            }
+
+            return null;
         }
     }
 }
