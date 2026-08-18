@@ -3,6 +3,7 @@
     "com.learnxr.core": "https://github.com/dilmerv/com.learnxr.core.git",
     "com.meta.movement": "https://github.com/oculus-samples/Unity-Movement.git#v69.0.0",
     "com.meta.xr.sdk.all": "69.0.1",
+    "com.ultraleap.tracking": "7.3.0",
     "com.unity.collab-proxy": "2.5.2",
     "com.unity.ide.rider": "3.0.34",
     "com.unity.ide.visualstudio": "2.0.22",
@@ -49,5 +50,14 @@
     "com.unity.modules.vr": "1.0.0",
     "com.unity.modules.wind": "1.0.0",
     "com.unity.modules.xr": "1.0.0"
-  }
+  },
+  "scopedRegistries": [
+    {
+      "name": "Ultraleap",
+      "url": "https://package.openupm.com",
+      "scopes": [
+        "com.ultraleap"
+      ]
+    }
+  ]
 }
