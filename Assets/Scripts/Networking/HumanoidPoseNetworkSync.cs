@@ -25,6 +25,11 @@ namespace MetaColocationDemos.Networking
         private const float SendRateHz = 30f;
         private const float SendInterval = 1f / SendRateHz;
 
+        // How many SendIntervals past the last received snapshot ApplyInterpolatedPose will keep
+        // extrapolating forward before giving up and holding still - bounds prediction to roughly 100ms of
+        // missed updates rather than letting a real disconnect extrapolate the pose indefinitely.
+        private const float MaxExtrapolationFactor = 3f;
+
         private float _timeSinceLastSend;
 
         /// <summary>
@@ -207,14 +212,18 @@ namespace MetaColocationDemos.Networking
                 return;
             }
 
-            var t = Mathf.Clamp01((Time.time - _interpolationStartTime) / SendInterval);
+            // Unclamped past t=1 - if the next update is late (e.g. a background/unfocused Editor instance
+            // getting throttled), this predicts forward from the previous->target motion instead of freezing
+            // dead on target and visibly catching up once the late update finally arrives. Still bounded
+            // (MaxExtrapolationFactor), so a genuine disconnect holds still rather than extrapolating forever.
+            var t = Mathf.Clamp((Time.time - _interpolationStartTime) / SendInterval, 0f, MaxExtrapolationFactor);
 
-            _humanPose.bodyPosition = Vector3.Lerp(previous.BodyPosition, target.BodyPosition, t);
-            _humanPose.bodyRotation = Quaternion.Slerp(previous.BodyRotation, target.BodyRotation, t);
+            _humanPose.bodyPosition = Vector3.LerpUnclamped(previous.BodyPosition, target.BodyPosition, t);
+            _humanPose.bodyRotation = Quaternion.SlerpUnclamped(previous.BodyRotation, target.BodyRotation, t);
 
             for (var i = 0; i < _interpolatedMuscles.Length; i++)
             {
-                _interpolatedMuscles[i] = Mathf.Lerp(previous.Muscles[i], target.Muscles[i], t);
+                _interpolatedMuscles[i] = Mathf.LerpUnclamped(previous.Muscles[i], target.Muscles[i], t);
             }
             _humanPose.muscles = _interpolatedMuscles;
 

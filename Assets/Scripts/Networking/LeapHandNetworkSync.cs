@@ -24,6 +24,9 @@ namespace MetaColocationDemos.Networking
         private const float SendRateHz = 30f;
         private const float SendInterval = 1f / SendRateHz;
 
+        // See HumanoidPoseNetworkSync.MaxExtrapolationFactor for the reasoning - same bound applied here.
+        private const float MaxExtrapolationFactor = 3f;
+
         [Tooltip("The LeapProvider to read local tracking data from on the owner (e.g. the LeapServiceProvider " +
                  "on 'Service Provider Desktop'). Unused on non-owners.")]
         [SerializeField] private LeapProvider localLeapProvider;
@@ -212,7 +215,9 @@ namespace MetaColocationDemos.Networking
         {
             if (!_hasReceivedFirstHands) return;
 
-            var t = Mathf.Clamp01((Time.time - _interpolationStartTime) / SendInterval);
+            // Unclamped past t=1 - see HumanoidPoseNetworkSync.ApplyInterpolatedPose for why (predicts
+            // forward on a late update instead of freezing dead on target and visibly catching up).
+            var t = Mathf.Clamp((Time.time - _interpolationStartTime) / SendInterval, 0f, MaxExtrapolationFactor);
             ApplyInterpolatedHand(leftHandModel, _previousLeftHand, _targetLeftHand, _renderLeftHand,
                                    _previousLeftTracked, _targetLeftTracked, t);
             ApplyInterpolatedHand(rightHandModel, _previousRightHand, _targetRightHand, _renderRightHand,
@@ -291,18 +296,18 @@ namespace MetaColocationDemos.Networking
             result.Id = to.Id;
             result.Confidence = to.Confidence;
             result.GrabStrength = to.GrabStrength;
-            result.Rotation = Quaternion.Slerp(from.Rotation, to.Rotation, t);
+            result.Rotation = Quaternion.SlerpUnclamped(from.Rotation, to.Rotation, t);
             result.PinchStrength = to.PinchStrength;
             result.PinchDistance = to.PinchDistance;
             result.PalmWidth = to.PalmWidth;
             result.IsLeft = to.IsLeft;
             result.TimeVisible = to.TimeVisible;
-            result.PalmPosition = Vector3.Lerp(from.PalmPosition, to.PalmPosition, t);
-            result.StabilizedPalmPosition = Vector3.Lerp(from.StabilizedPalmPosition, to.StabilizedPalmPosition, t);
-            result.PalmVelocity = Vector3.Lerp(from.PalmVelocity, to.PalmVelocity, t);
-            result.PalmNormal = Vector3.Slerp(from.PalmNormal, to.PalmNormal, t);
-            result.Direction = Vector3.Slerp(from.Direction, to.Direction, t);
-            result.WristPosition = Vector3.Lerp(from.WristPosition, to.WristPosition, t);
+            result.PalmPosition = Vector3.LerpUnclamped(from.PalmPosition, to.PalmPosition, t);
+            result.StabilizedPalmPosition = Vector3.LerpUnclamped(from.StabilizedPalmPosition, to.StabilizedPalmPosition, t);
+            result.PalmVelocity = Vector3.LerpUnclamped(from.PalmVelocity, to.PalmVelocity, t);
+            result.PalmNormal = Vector3.SlerpUnclamped(from.PalmNormal, to.PalmNormal, t);
+            result.Direction = Vector3.SlerpUnclamped(from.Direction, to.Direction, t);
+            result.WristPosition = Vector3.LerpUnclamped(from.WristPosition, to.WristPosition, t);
 
             // Not interpolated - the forearm isn't fed into HandBinder's finger/wrist bones, so a one-frame
             // snap here whenever a new target arrives isn't perceptible the way finger choppiness would be.
@@ -324,8 +329,8 @@ namespace MetaColocationDemos.Networking
             result.Id = to.Id;
             result.HandId = to.HandId;
             result.TimeVisible = to.TimeVisible;
-            result.TipPosition = Vector3.Lerp(from.TipPosition, to.TipPosition, t);
-            result.Direction = Vector3.Slerp(from.Direction, to.Direction, t);
+            result.TipPosition = Vector3.LerpUnclamped(from.TipPosition, to.TipPosition, t);
+            result.Direction = Vector3.SlerpUnclamped(from.Direction, to.Direction, t);
             result.Width = to.Width;
             result.Length = to.Length;
             result.IsExtended = to.IsExtended;
@@ -334,13 +339,13 @@ namespace MetaColocationDemos.Networking
 
         private static void LerpBone(Bone from, Bone to, float t, Bone result)
         {
-            result.PrevJoint = Vector3.Lerp(from.PrevJoint, to.PrevJoint, t);
-            result.NextJoint = Vector3.Lerp(from.NextJoint, to.NextJoint, t);
-            result.Direction = Vector3.Slerp(from.Direction, to.Direction, t);
-            result.Center = Vector3.Lerp(from.Center, to.Center, t);
+            result.PrevJoint = Vector3.LerpUnclamped(from.PrevJoint, to.PrevJoint, t);
+            result.NextJoint = Vector3.LerpUnclamped(from.NextJoint, to.NextJoint, t);
+            result.Direction = Vector3.SlerpUnclamped(from.Direction, to.Direction, t);
+            result.Center = Vector3.LerpUnclamped(from.Center, to.Center, t);
             result.Length = to.Length;
             result.Width = to.Width;
-            result.Rotation = Quaternion.Slerp(from.Rotation, to.Rotation, t);
+            result.Rotation = Quaternion.SlerpUnclamped(from.Rotation, to.Rotation, t);
             result.Type = to.Type;
         }
     }
