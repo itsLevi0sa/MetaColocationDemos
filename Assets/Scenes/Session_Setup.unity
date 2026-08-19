@@ -320,6 +320,7 @@ MonoBehaviour:
   colocationEnabled: 0
   passthroughEnabled: 0
   leapRetargeting: 1
+  enableHumanoidIk: 0
   vrUserPrefab: {fileID: 5014441969086449538, guid: dd50aabdb5d88ec4ea50c48bd15f3419,
     type: 3}
   pcUserPrefab: {fileID: 8339533067020260767, guid: 89b2599aef012f944ba925439c2e3693,
@@ -346,7 +347,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 288859821}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b7b8deaa578c16b4f8984cada08fbac8, type: 3}
   m_Name: 

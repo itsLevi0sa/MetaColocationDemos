@@ -74,6 +74,14 @@ namespace MetaColocationDemos.Spectator
                  "user to follow. Meant for a Leap Motion spectator riding along on the VR wearer's head.")]
         [SerializeField] private bool leapRetargeting;
 
+        [Tooltip("Local rendering choice, checked independently by every client: when unchecked, hides the " +
+                 "VR user's humanoid body mesh (see AvatarBodyVisibility) and Meta's own hand-tracking " +
+                 "visuals (see MetaHandVisualsToggle), so only the networked Leap Motion ghost hands " +
+                 "represent them. Body tracking itself (Animator/OVRBody/RigBuilder/RetargetingLayer) keeps " +
+                 "running underneath either way - this only controls what's rendered, not what drives " +
+                 "PcUserHeadFollower or HumanoidPoseNetworkSync, so head-follow and pose sync stay accurate.")]
+        [SerializeField] private bool enableHumanoidIk = true;
+
         [Header("Network Settings")]
 
         [Tooltip("The NetworkedVRUser prefab (registered in DefaultNetworkPrefabs) to spawn for each " +
@@ -98,11 +106,14 @@ namespace MetaColocationDemos.Spectator
 
         public static bool IsLeapRetargetingEnabled { get; private set; }
 
+        public static bool IsHumanoidIkEnabled { get; private set; }
+
         private IEnumerator Start()
         {
             IsColocationEnabled = colocationEnabled;
             IsPassthroughEnabled = passthroughEnabled;
             IsLeapRetargetingEnabled = leapRetargeting;
+            IsHumanoidIkEnabled = enableHumanoidIk;
 
             // A ParrelSync clone editor has no real XR device of its own to detect, so without this it
             // would always auto-detect as a spectator - making it useless for locally testing a VR client

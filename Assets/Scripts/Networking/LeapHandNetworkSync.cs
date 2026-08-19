@@ -99,6 +99,12 @@ namespace MetaColocationDemos.Networking
         {
             if (!IsOwner)
             {
+                // The remote copy of Service Provider Desktop has no physical Leap device to talk to on this
+                // machine (e.g. it's just noise on a Quest, spamming "Leap Service not connected; attempting
+                // to reconnect" every few seconds forever) - it was never providing anything to a non-owner
+                // copy anyway, since the two lines below already disconnect the hand models from it.
+                if (localLeapProvider != null) localLeapProvider.enabled = false;
+
                 // A remote copy must not let its own (device-less) LeapProvider drive these hand models -
                 // left enabled, it would call SetLeapHand(null) every frame and fight the pose applied below.
                 if (leftHandModel != null) leftHandModel.leapProvider = null;
