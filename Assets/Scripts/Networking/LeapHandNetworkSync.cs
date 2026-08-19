@@ -15,6 +15,9 @@ namespace MetaColocationDemos.Networking
     /// feeds it straight into the same HandBinder/CapsuleHand components that would otherwise be driven by
     /// a local LeapProvider - see leapProvider = null below for why the normal auto-driven path has to be
     /// turned off on non-owners first, same reasoning as HumanoidPoseNetworkSync disabling OVRBody.
+    ///
+    /// Decode/interpolate/show/hide lifecycle lives in HandPoseApplier, shared with RecordedHandNetworkSync
+    /// (recorded playback, server-written instead of owner-written) so both stay in sync with each other.
     /// </summary>
     [RequireComponent(typeof(NetworkObject))]
     public class LeapHandNetworkSync : NetworkBehaviour
@@ -37,21 +40,12 @@ namespace MetaColocationDemos.Networking
         [SerializeField] private HandModelBase leftHandModel;
         [SerializeField] private HandModelBase rightHandModel;
 
-        private struct LeapHandsData : INetworkSerializable
-        {
-            public bool LeftTracked;
-            public bool RightTracked;
-            public byte[] LeftHandBytes;
-            public byte[] RightHandBytes;
-
-            public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
-            {
-                serializer.SerializeValue(ref LeftTracked);
-                serializer.SerializeValue(ref RightTracked);
-                serializer.SerializeValue(ref LeftHandBytes);
-                serializer.SerializeValue(ref RightHandBytes);
-            }
-        }
+        // Exposed for RecordManager: it samples these models' current Leap.Hand via GetLeapHand() rather than
+        // reading localLeapProvider directly, so recording works the same way regardless of whether it runs
+        // on this PC user's own machine (owner, live tracking) or anywhere else in the session (non-owner,
+        // already-decoded network data) - either way these are the models actually showing this PC user's hands.
+        public HandModelBase LeftHandModel => leftHandModel;
+        public HandModelBase RightHandModel => rightHandModel;
 
         // Byte arrays must never be null when this gets serialized - Netcode's array writer has no
         // null-check, same gotcha as HumanoidPoseNetworkSync.Muscles. Built in Awake(), not a field
@@ -186,8 +180,8 @@ namespace MetaColocationDemos.Networking
         // this alone until then.
         private void ApplyHands(LeapHandsData data)
         {
-            ApplyHandSnapshot(leftHandModel, _leftVectorHand, _leftHandBuffer, data.LeftTracked, data.LeftHandBytes);
-            ApplyHandSnapshot(rightHandModel, _rightVectorHand, _rightHandBuffer, data.RightTracked, data.RightHandBytes);
+            HandPoseApplier.ApplySnapshot(leftHandModel, _leftVectorHand, _leftHandBuffer, data.LeftTracked, data.LeftHandBytes);
+            HandPoseApplier.ApplySnapshot(rightHandModel, _rightVectorHand, _rightHandBuffer, data.RightTracked, data.RightHandBytes);
         }
 
         private void OnHandsReceived(LeapHandsData data)
@@ -224,135 +218,10 @@ namespace MetaColocationDemos.Networking
             // Unclamped past t=1 - see HumanoidPoseNetworkSync.ApplyInterpolatedPose for why (predicts
             // forward on a late update instead of freezing dead on target and visibly catching up).
             var t = Mathf.Clamp((Time.time - _interpolationStartTime) / SendInterval, 0f, MaxExtrapolationFactor);
-            ApplyInterpolatedHand(leftHandModel, _previousLeftHand, _targetLeftHand, _renderLeftHand,
-                                   _previousLeftTracked, _targetLeftTracked, t);
-            ApplyInterpolatedHand(rightHandModel, _previousRightHand, _targetRightHand, _renderRightHand,
-                                   _previousRightTracked, _targetRightTracked, t);
-        }
-
-        private static void ApplyHandSnapshot(HandModelBase model, VectorHand vectorHand, Hand handBuffer, bool tracked, byte[] bytes)
-        {
-            if (model == null) return;
-
-            if (!tracked || bytes == null)
-            {
-                HideHand(model);
-                return;
-            }
-
-            vectorHand.ReadBytes(bytes);
-            vectorHand.Decode(handBuffer);
-            ShowHand(model, handBuffer);
-        }
-
-        private static void ApplyInterpolatedHand(HandModelBase model, Hand previous, Hand target, Hand render,
-                                                    bool previousTracked, bool targetTracked, float t)
-        {
-            if (model == null) return;
-
-            if (!targetTracked)
-            {
-                HideHand(model);
-                return;
-            }
-
-            // Can't interpolate from "no hand" - snap straight to the target on the first frame it's tracked.
-            if (previousTracked)
-            {
-                LerpHand(previous, target, t, render);
-            }
-            else
-            {
-                render.CopyFrom(target);
-            }
-
-            ShowHand(model, render);
-        }
-
-        private static void HideHand(HandModelBase model)
-        {
-            model.SetLeapHand(null);
-            if (model.IsTracked) model.FinishHand();
-            // HandEnableDisable is disabled on non-owners (see OnNetworkSpawn), so nothing else will hide
-            // this hand when tracking is lost - do it ourselves.
-            model.gameObject.SetActive(false);
-        }
-
-        private static void ShowHand(HandModelBase model, Hand hand)
-        {
-            // Same reasoning in reverse - with HandEnableDisable disabled, nothing else will show this hand
-            // again once tracking resumes.
-            model.gameObject.SetActive(true);
-            model.SetLeapHand(hand);
-
-            if (!model.IsTracked)
-            {
-                model.InitHand();
-                model.BeginHand();
-            }
-
-            if (model.gameObject.activeInHierarchy) model.UpdateHandWithEvent();
-        }
-
-        // Mirrors CopyFromOtherExtensions.CopyFrom's field set exactly, just blending positions/rotations
-        // instead of assigning them outright. Fields that don't benefit from interpolation (widths, lengths,
-        // IDs, extended flags) are taken from the target, same as a plain CopyFrom would.
-        private static void LerpHand(Hand from, Hand to, float t, Hand result)
-        {
-            result.Id = to.Id;
-            result.Confidence = to.Confidence;
-            result.GrabStrength = to.GrabStrength;
-            result.Rotation = Quaternion.SlerpUnclamped(from.Rotation, to.Rotation, t);
-            result.PinchStrength = to.PinchStrength;
-            result.PinchDistance = to.PinchDistance;
-            result.PalmWidth = to.PalmWidth;
-            result.IsLeft = to.IsLeft;
-            result.TimeVisible = to.TimeVisible;
-            result.PalmPosition = Vector3.LerpUnclamped(from.PalmPosition, to.PalmPosition, t);
-            result.StabilizedPalmPosition = Vector3.LerpUnclamped(from.StabilizedPalmPosition, to.StabilizedPalmPosition, t);
-            result.PalmVelocity = Vector3.LerpUnclamped(from.PalmVelocity, to.PalmVelocity, t);
-            result.PalmNormal = Vector3.SlerpUnclamped(from.PalmNormal, to.PalmNormal, t);
-            result.Direction = Vector3.SlerpUnclamped(from.Direction, to.Direction, t);
-            result.WristPosition = Vector3.LerpUnclamped(from.WristPosition, to.WristPosition, t);
-
-            // Not interpolated - the forearm isn't fed into HandBinder's finger/wrist bones, so a one-frame
-            // snap here whenever a new target arrives isn't perceptible the way finger choppiness would be.
-            result.Arm.CopyFrom(to.Arm);
-
-            for (var i = 0; i < 5; i++)
-            {
-                LerpFinger(from.fingers[i], to.fingers[i], t, result.fingers[i]);
-            }
-        }
-
-        private static void LerpFinger(Finger from, Finger to, float t, Finger result)
-        {
-            for (var i = 0; i < 4; i++)
-            {
-                LerpBone(from.bones[i], to.bones[i], t, result.bones[i]);
-            }
-
-            result.Id = to.Id;
-            result.HandId = to.HandId;
-            result.TimeVisible = to.TimeVisible;
-            result.TipPosition = Vector3.LerpUnclamped(from.TipPosition, to.TipPosition, t);
-            result.Direction = Vector3.SlerpUnclamped(from.Direction, to.Direction, t);
-            result.Width = to.Width;
-            result.Length = to.Length;
-            result.IsExtended = to.IsExtended;
-            result.Type = to.Type;
-        }
-
-        private static void LerpBone(Bone from, Bone to, float t, Bone result)
-        {
-            result.PrevJoint = Vector3.LerpUnclamped(from.PrevJoint, to.PrevJoint, t);
-            result.NextJoint = Vector3.LerpUnclamped(from.NextJoint, to.NextJoint, t);
-            result.Direction = Vector3.SlerpUnclamped(from.Direction, to.Direction, t);
-            result.Center = Vector3.LerpUnclamped(from.Center, to.Center, t);
-            result.Length = to.Length;
-            result.Width = to.Width;
-            result.Rotation = Quaternion.SlerpUnclamped(from.Rotation, to.Rotation, t);
-            result.Type = to.Type;
+            HandPoseApplier.ApplyInterpolated(leftHandModel, _previousLeftHand, _targetLeftHand, _renderLeftHand,
+                                               _previousLeftTracked, _targetLeftTracked, t);
+            HandPoseApplier.ApplyInterpolated(rightHandModel, _previousRightHand, _targetRightHand, _renderRightHand,
+                                               _previousRightTracked, _targetRightTracked, t);
         }
     }
 }
