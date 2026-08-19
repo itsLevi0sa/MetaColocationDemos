@@ -66,6 +66,14 @@ namespace MetaColocationDemos.Spectator
                  "usage as the source of a tracking drift issue.")]
         [SerializeField] private bool passthroughEnabled = true;
 
+        [Header("Leap Motion Settings")]
+
+        [Tooltip("When checked, a connecting spectator's NetworkedPCUser attaches to the first VR user's " +
+                 "head instead of free-flying (see PcUserHeadFollower) - SpectatorFlyCamera is disabled for " +
+                 "as long as a VR user's avatar is present, and re-enabled if it despawns with no other VR " +
+                 "user to follow. Meant for a Leap Motion spectator riding along on the VR wearer's head.")]
+        [SerializeField] private bool leapRetargeting;
+
         [Header("Network Settings")]
 
         [Tooltip("The NetworkedVRUser prefab (registered in DefaultNetworkPrefabs) to spawn for each " +
@@ -88,10 +96,13 @@ namespace MetaColocationDemos.Spectator
 
         public static bool IsPassthroughEnabled { get; private set; }
 
+        public static bool IsLeapRetargetingEnabled { get; private set; }
+
         private IEnumerator Start()
         {
             IsColocationEnabled = colocationEnabled;
             IsPassthroughEnabled = passthroughEnabled;
+            IsLeapRetargetingEnabled = leapRetargeting;
 
             // A ParrelSync clone editor has no real XR device of its own to detect, so without this it
             // would always auto-detect as a spectator - making it useless for locally testing a VR client
