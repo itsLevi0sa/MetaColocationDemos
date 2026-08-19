@@ -13,6 +13,19 @@ namespace MetaColocationDemos.Networking
     /// </summary>
     public static class HandPoseApplier
     {
+        // How long to keep showing a hand after it's reported untracked before actually hiding it. Raw Leap
+        // tracking briefly drops a hand for a frame or two all the time (edge of FOV, fast motion, momentary
+        // occlusion) - locally that's barely perceptible because Ultraleap's own rendering just keeps ticking,
+        // but LeapHandNetworkSync only samples/sends tracked state at 30Hz, so any single missed sample used
+        // to hide the hand outright and pop it back a frame later. This treats a loss as real only once it
+        // outlasts a short grace window instead of on the very first untracked sample.
+        private const float TrackingGraceSeconds = 0.25f;
+
+        // Caps how far a hand can drift during the grace window (see ApplyInterpolated below) - without this,
+        // a hand tracking loss that happens mid-fast-swipe (a large PalmVelocity) would fling the held hand a
+        // visible distance instead of just gently continuing in place.
+        private const float MaxGraceDriftMeters = 0.1f;
+
         // Instant apply, no blending - used for the first pose applied to a model (nothing to interpolate
         // from yet) by both LeapHandNetworkSync and RecordedHandNetworkSync.
         public static void ApplySnapshot(HandModelBase model, VectorHand vectorHand, Hand handBuffer, bool tracked, byte[] bytes)
@@ -33,14 +46,32 @@ namespace MetaColocationDemos.Networking
         // Blends between two already-decoded hands - t is unclamped past 1 by design (see
         // HumanoidPoseNetworkSync.ApplyInterpolatedPose for why: predicts forward on a late update instead of
         // freezing dead on target and visibly catching up).
+        //
+        // timeSinceLostTracking is how long ago targetTracked last flipped from true to false (see
+        // LeapHandNetworkSync/RecordedHandNetworkSync's _leftLostTrackingTime) - +infinity/a very large value
+        // if it's never been lost, which naturally always exceeds TrackingGraceSeconds and has no effect
+        // whenever targetTracked is true anyway.
         public static void ApplyInterpolated(HandModelBase model, Hand previous, Hand target, Hand render,
-                                              bool previousTracked, bool targetTracked, float t)
+                                              bool previousTracked, bool targetTracked, float t,
+                                              float timeSinceLostTracking)
         {
             if (model == null) return;
 
             if (!targetTracked)
             {
-                Hide(model);
+                if (timeSinceLostTracking >= TrackingGraceSeconds)
+                {
+                    Hide(model);
+                    return;
+                }
+
+                // Grace period: still within the hold window, so keep showing target (its last known tracked
+                // pose - see OnHandsReceived, which stops overwriting it once untracked) drifting gently along
+                // its last known velocity instead of freezing dead in place, capped so a fast-motion tracking
+                // loss doesn't fling it.
+                var drift = Vector3.ClampMagnitude(target.PalmVelocity * timeSinceLostTracking, MaxGraceDriftMeters);
+                HandSpaceTransform.Translate(target, drift, render);
+                Show(model, render);
                 return;
             }
 

@@ -60,14 +60,24 @@ namespace MetaColocationDemos.Recording
             public byte[] RightHandBytes;
         }
 
+        // Extra 180-degree yaw applied to the recorded head rotation in F11's rotation-only mode, so
+        // Lambertian faces the viewer (mirroring them) instead of facing the same way the recorded VR user did.
+        private static readonly Quaternion MirrorRotation = Quaternion.Euler(0f, 180f, 0f);
+
         private readonly List<Frame> _frames = new();
 
         // Reused across frames so encoding/decoding doesn't allocate every sample, same reasoning as
-        // LeapHandNetworkSync's identical fields.
+        // LeapHandNetworkSync's identical fields. _leftHandBuffer/_rightHandBuffer hold a head-relative hand
+        // (see HandSpaceTransform) on both sides: written by ToLocal before encoding while recording, and by
+        // Decode before ToWorld while playing back - recording and playback never happen at the same time, so
+        // reusing the same buffer for both is safe. _leftWorldHandBuffer/_rightWorldHandBuffer only exist for
+        // playback, holding the hand re-anchored onto Lambertian's current head pose before re-encoding.
         private readonly VectorHand _leftVectorHand = new();
         private readonly VectorHand _rightVectorHand = new();
         private readonly Hand _leftHandBuffer = new();
         private readonly Hand _rightHandBuffer = new();
+        private readonly Hand _leftWorldHandBuffer = new();
+        private readonly Hand _rightWorldHandBuffer = new();
 
         private VrHeadPoseNetworkSync _vrHeadSource;
         private LeapHandNetworkSync _pcHandSource;
@@ -75,8 +85,11 @@ namespace MetaColocationDemos.Recording
         private float _recordingStartTime;
 
         // Playback target - see the class doc comment for why this is resolved at runtime instead of an
-        // Inspector reference.
+        // Inspector reference. _homePosition is Lambertian's own authored position in Environment, captured
+        // the moment _playbackTarget is first resolved (before any playback has had a chance to move it) -
+        // F11 mode restores this every frame rather than just leaving whatever position F10 last left it at.
         private RecordedHandNetworkSync _playbackTarget;
+        private Vector3 _homePosition;
 
         private Frame[] _loadedFrames;
         private int _playbackFrameIndex;
@@ -159,16 +172,25 @@ namespace MetaColocationDemos.Recording
             var frame = new Frame
             {
                 Time = Time.time - _recordingStartTime,
+                // Explicit identity, not the struct default - see VrHeadPoseNetworkSync's identical field for
+                // why default(Quaternion) (0,0,0,0) is a degenerate/zero-length quaternion, not identity.
+                HeadRotation = Quaternion.identity,
                 LeftHandBytes = new byte[VectorHand.NUM_BYTES],
                 RightHandBytes = new byte[VectorHand.NUM_BYTES],
             };
 
             var headAnchor = _vrHeadSource != null ? _vrHeadSource.HeadAnchor : null;
-            if (headAnchor != null)
+            if (headAnchor == null)
             {
-                frame.HeadPosition = headAnchor.position;
-                frame.HeadRotation = headAnchor.rotation;
+                // No head to record relative to yet, so hands can't be meaningfully stored either (see
+                // HandSpaceTransform) - this frame just records "nothing happened", same as it would with no
+                // VR user connected at all.
+                _frames.Add(frame);
+                return;
             }
+
+            frame.HeadPosition = headAnchor.position;
+            frame.HeadRotation = headAnchor.rotation;
 
             if (_pcHandSource != null)
             {
@@ -178,14 +200,19 @@ namespace MetaColocationDemos.Recording
                 frame.LeftTracked = left != null;
                 frame.RightTracked = right != null;
 
+                // Stored relative to the head, not as absolute world positions - see HandSpaceTransform for
+                // why: it's what lets playback re-anchor the hands onto Lambertian's own head pose instead of
+                // the VR user's original recording-time world position.
                 if (left != null)
                 {
-                    _leftVectorHand.Encode(left);
+                    HandSpaceTransform.ToLocal(left, frame.HeadPosition, frame.HeadRotation, _leftHandBuffer);
+                    _leftVectorHand.Encode(_leftHandBuffer);
                     _leftVectorHand.FillBytes(frame.LeftHandBytes);
                 }
                 if (right != null)
                 {
-                    _rightVectorHand.Encode(right);
+                    HandSpaceTransform.ToLocal(right, frame.HeadPosition, frame.HeadRotation, _rightHandBuffer);
+                    _rightVectorHand.Encode(_rightHandBuffer);
                     _rightVectorHand.FillBytes(frame.RightHandBytes);
                 }
             }
@@ -235,6 +262,7 @@ namespace MetaColocationDemos.Recording
             if (CanDrivePlayback && _playbackTarget == null)
             {
                 _playbackTarget = FindObjectOfType<RecordedHandNetworkSync>(includeInactive: true);
+                if (_playbackTarget != null) _homePosition = _playbackTarget.transform.position;
             }
 
             var playbackTime = Time.time - _playbackStartTime;
@@ -258,10 +286,14 @@ namespace MetaColocationDemos.Recording
         {
             if (_playbackKeepOwnPosition)
             {
-                _playbackTarget.transform.rotation = frame.HeadRotation;
+                // Snaps back to wherever Lambertian is actually placed in Environment (not just "leaves
+                // position untouched", which would still show wherever F10 last moved it to) and faces the
+                // viewer (mirrored) instead of facing the same way the recorded VR user did.
+                _playbackTarget.transform.SetPositionAndRotation(_homePosition, frame.HeadRotation * MirrorRotation);
             }
             else
             {
+                // "Becomes" the VR user: moves to their exact recorded position/rotation.
                 _playbackTarget.transform.SetPositionAndRotation(frame.HeadPosition, frame.HeadRotation);
             }
 
@@ -270,7 +302,39 @@ namespace MetaColocationDemos.Recording
             // with no-op writes.
             if (!isNewFrame) return;
 
-            _playbackTarget.ServerSetHands(frame.LeftTracked, frame.LeftHandBytes, frame.RightTracked, frame.RightHandBytes);
+            // Recorded bytes are head-relative (see SampleIfDue/HandSpaceTransform) - re-anchor them onto
+            // whatever head pose Lambertian is actually showing this frame (its own fixed+mirrored pose in
+            // F11 mode, or the recorded pose verbatim in F10 mode, which round-trips back to the same
+            // absolute hand positions the recording captured) before pushing to every client.
+            var headPosition = _playbackTarget.transform.position;
+            var headRotation = _playbackTarget.transform.rotation;
+
+            var leftBytes = ReanchorHandBytes(frame.LeftTracked, frame.LeftHandBytes, headPosition, headRotation,
+                                               _leftVectorHand, _leftHandBuffer, _leftWorldHandBuffer);
+            var rightBytes = ReanchorHandBytes(frame.RightTracked, frame.RightHandBytes, headPosition, headRotation,
+                                                _rightVectorHand, _rightHandBuffer, _rightWorldHandBuffer);
+
+            _playbackTarget.ServerSetHands(frame.LeftTracked, leftBytes, frame.RightTracked, rightBytes);
+        }
+
+        private static byte[] ReanchorHandBytes(bool tracked, byte[] recordedBytes, Vector3 headPosition, Quaternion headRotation,
+                                                 VectorHand vectorHand, Hand localBuffer, Hand worldBuffer)
+        {
+            if (!tracked || recordedBytes == null) return null;
+
+            vectorHand.ReadBytes(recordedBytes);
+            vectorHand.Decode(localBuffer);
+            HandSpaceTransform.ToWorld(localBuffer, headPosition, headRotation, worldBuffer);
+            vectorHand.Encode(worldBuffer);
+
+            // A fresh array every call, not a reused buffer - RecordedHandNetworkSync's NetworkVariable dirty
+            // check compares LeapHandsData by field equality, and byte[] equality is by reference. Reusing a
+            // buffer here means the reference never changes even though its contents do, so Netcode would
+            // decide nothing changed and stop replicating hand updates after the first frame - same gotcha
+            // LeapHandNetworkSync.SendHandsIfDue already documents for the exact same reason.
+            var bytes = new byte[VectorHand.NUM_BYTES];
+            vectorHand.FillBytes(bytes);
+            return bytes;
         }
 
         // --- File I/O ---

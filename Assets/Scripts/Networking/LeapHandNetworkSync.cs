@@ -78,6 +78,13 @@ namespace MetaColocationDemos.Networking
         private float _interpolationStartTime;
         private bool _hasReceivedFirstHands;
 
+        // Time.time of the last true->false transition of _targetLeftTracked/_targetRightTracked - stays
+        // NegativeInfinity until tracking is actually lost once, so a hand that's simply never been tracked
+        // yet still hides immediately in ApplyInterpolatedHands rather than getting an undeserved grace
+        // period. See HandPoseApplier.ApplyInterpolated for how this is used.
+        private float _leftLostTrackingTime = float.NegativeInfinity;
+        private float _rightLostTrackingTime = float.NegativeInfinity;
+
         private void Awake()
         {
             _networkedHands = new NetworkVariable<LeapHandsData>(
@@ -193,6 +200,9 @@ namespace MetaColocationDemos.Networking
             if (_targetLeftTracked) _previousLeftHand.CopyFrom(_targetLeftHand);
             if (_targetRightTracked) _previousRightHand.CopyFrom(_targetRightHand);
 
+            if (_previousLeftTracked && !data.LeftTracked) _leftLostTrackingTime = Time.time;
+            if (_previousRightTracked && !data.RightTracked) _rightLostTrackingTime = Time.time;
+
             _targetLeftTracked = data.LeftTracked;
             _targetRightTracked = data.RightTracked;
 
@@ -219,9 +229,9 @@ namespace MetaColocationDemos.Networking
             // forward on a late update instead of freezing dead on target and visibly catching up).
             var t = Mathf.Clamp((Time.time - _interpolationStartTime) / SendInterval, 0f, MaxExtrapolationFactor);
             HandPoseApplier.ApplyInterpolated(leftHandModel, _previousLeftHand, _targetLeftHand, _renderLeftHand,
-                                               _previousLeftTracked, _targetLeftTracked, t);
+                                               _previousLeftTracked, _targetLeftTracked, t, Time.time - _leftLostTrackingTime);
             HandPoseApplier.ApplyInterpolated(rightHandModel, _previousRightHand, _targetRightHand, _renderRightHand,
-                                               _previousRightTracked, _targetRightTracked, t);
+                                               _previousRightTracked, _targetRightTracked, t, Time.time - _rightLostTrackingTime);
         }
     }
 }

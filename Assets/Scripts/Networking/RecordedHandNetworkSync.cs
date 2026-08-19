@@ -49,6 +49,10 @@ namespace MetaColocationDemos.Networking
         private float _interpolationStartTime;
         private bool _hasReceivedFirstHands;
 
+        // See LeapHandNetworkSync's identical fields for the full reasoning.
+        private float _leftLostTrackingTime = float.NegativeInfinity;
+        private float _rightLostTrackingTime = float.NegativeInfinity;
+
         private void Awake()
         {
             _networkedHands = new NetworkVariable<LeapHandsData>(
@@ -99,6 +103,9 @@ namespace MetaColocationDemos.Networking
             if (_targetLeftTracked) _previousLeftHand.CopyFrom(_targetLeftHand);
             if (_targetRightTracked) _previousRightHand.CopyFrom(_targetRightHand);
 
+            if (_previousLeftTracked && !data.LeftTracked) _leftLostTrackingTime = Time.time;
+            if (_previousRightTracked && !data.RightTracked) _rightLostTrackingTime = Time.time;
+
             _targetLeftTracked = data.LeftTracked;
             _targetRightTracked = data.RightTracked;
 
@@ -123,9 +130,9 @@ namespace MetaColocationDemos.Networking
 
             var t = Mathf.Clamp((Time.time - _interpolationStartTime) / UpdateInterval, 0f, MaxExtrapolationFactor);
             HandPoseApplier.ApplyInterpolated(leftHandModel, _previousLeftHand, _targetLeftHand, _renderLeftHand,
-                                               _previousLeftTracked, _targetLeftTracked, t);
+                                               _previousLeftTracked, _targetLeftTracked, t, Time.time - _leftLostTrackingTime);
             HandPoseApplier.ApplyInterpolated(rightHandModel, _previousRightHand, _targetRightHand, _renderRightHand,
-                                               _previousRightTracked, _targetRightTracked, t);
+                                               _previousRightTracked, _targetRightTracked, t, Time.time - _rightLostTrackingTime);
         }
     }
 }
