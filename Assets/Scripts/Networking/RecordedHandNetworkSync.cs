@@ -23,6 +23,12 @@ namespace MetaColocationDemos.Networking
         // See HumanoidPoseNetworkSync.MaxExtrapolationFactor for the reasoning - same bound applied here.
         private const float MaxExtrapolationFactor = 3f;
 
+        // Unlike LeapHandNetworkSync, untracked here can also mean StopPlayback() deliberately hiding the hand
+        // (see ServerHideHands) rather than a genuine tracking dropout recorded in the frame data - so this
+        // can't hold indefinitely like the live case does. Short grace window instead: rides through a real
+        // recorded dropout without a visible pop, but still actually hides within a beat of an intentional stop.
+        private const float TrackingGraceSeconds = 0.25f;
+
         [Tooltip("The left/right hand models (e.g. Lambertian's GhostHands HandBinder components) driven from " +
                  "recorded playback data on every client.")]
         [SerializeField] private HandModelBase leftHandModel;
@@ -130,9 +136,11 @@ namespace MetaColocationDemos.Networking
 
             var t = Mathf.Clamp((Time.time - _interpolationStartTime) / UpdateInterval, 0f, MaxExtrapolationFactor);
             HandPoseApplier.ApplyInterpolated(leftHandModel, _previousLeftHand, _targetLeftHand, _renderLeftHand,
-                                               _previousLeftTracked, _targetLeftTracked, t, Time.time - _leftLostTrackingTime);
+                                               _previousLeftTracked, _targetLeftTracked, t, Time.time - _leftLostTrackingTime,
+                                               TrackingGraceSeconds);
             HandPoseApplier.ApplyInterpolated(rightHandModel, _previousRightHand, _targetRightHand, _renderRightHand,
-                                               _previousRightTracked, _targetRightTracked, t, Time.time - _rightLostTrackingTime);
+                                               _previousRightTracked, _targetRightTracked, t, Time.time - _rightLostTrackingTime,
+                                               TrackingGraceSeconds);
         }
     }
 }

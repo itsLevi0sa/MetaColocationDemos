@@ -13,14 +13,6 @@ namespace MetaColocationDemos.Networking
     /// </summary>
     public static class HandPoseApplier
     {
-        // How long to keep showing a hand after it's reported untracked before actually hiding it. Raw Leap
-        // tracking briefly drops a hand for a frame or two all the time (edge of FOV, fast motion, momentary
-        // occlusion) - locally that's barely perceptible because Ultraleap's own rendering just keeps ticking,
-        // but LeapHandNetworkSync only samples/sends tracked state at 30Hz, so any single missed sample used
-        // to hide the hand outright and pop it back a frame later. This treats a loss as real only once it
-        // outlasts a short grace window instead of on the very first untracked sample.
-        private const float TrackingGraceSeconds = 0.25f;
-
         // Caps how far a hand can drift during the grace window (see ApplyInterpolated below) - without this,
         // a hand tracking loss that happens mid-fast-swipe (a large PalmVelocity) would fling the held hand a
         // visible distance instead of just gently continuing in place.
@@ -49,17 +41,26 @@ namespace MetaColocationDemos.Networking
         //
         // timeSinceLostTracking is how long ago targetTracked last flipped from true to false (see
         // LeapHandNetworkSync/RecordedHandNetworkSync's _leftLostTrackingTime) - +infinity/a very large value
-        // if it's never been lost, which naturally always exceeds TrackingGraceSeconds and has no effect
-        // whenever targetTracked is true anyway.
+        // if it's never been lost, which naturally always exceeds graceSeconds and has no effect whenever
+        // targetTracked is true anyway.
+        //
+        // graceSeconds is how long to keep guessing (drifting/holding the last known pose) before actually
+        // hiding - callers choose this based on what targetTracked=false means for them:
+        //  - LeapHandNetworkSync only ever reports false for genuine live tracking dropouts (edge of FOV, fast
+        //    motion, momentary occlusion), never an intentional hide, so it passes Mathf.Infinity: keep
+        //    guessing and never snap the hand away, only ever resolve back to real tracking once it returns.
+        //  - RecordedHandNetworkSync's false can also mean StopPlayback() deliberately hiding the hand, which
+        //    needs to actually disappear promptly - it passes a short grace (see that class) so a real loss
+        //    still rides through a brief hold, but an intentional stop doesn't linger on screen.
         public static void ApplyInterpolated(HandModelBase model, Hand previous, Hand target, Hand render,
                                               bool previousTracked, bool targetTracked, float t,
-                                              float timeSinceLostTracking)
+                                              float timeSinceLostTracking, float graceSeconds)
         {
             if (model == null) return;
 
             if (!targetTracked)
             {
-                if (timeSinceLostTracking >= TrackingGraceSeconds)
+                if (timeSinceLostTracking >= graceSeconds)
                 {
                     Hide(model);
                     return;
@@ -68,7 +69,9 @@ namespace MetaColocationDemos.Networking
                 // Grace period: still within the hold window, so keep showing target (its last known tracked
                 // pose - see OnHandsReceived, which stops overwriting it once untracked) drifting gently along
                 // its last known velocity instead of freezing dead in place, capped so a fast-motion tracking
-                // loss doesn't fling it.
+                // loss doesn't fling it. The clamp means this naturally settles at a fixed offset and holds
+                // there rather than drifting further away the longer tracking stays lost - safe even when
+                // graceSeconds is infinite.
                 var drift = Vector3.ClampMagnitude(target.PalmVelocity * timeSinceLostTracking, MaxGraceDriftMeters);
                 HandSpaceTransform.Translate(target, drift, render);
                 Show(model, render);

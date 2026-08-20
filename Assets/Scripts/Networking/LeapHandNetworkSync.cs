@@ -30,6 +30,12 @@ namespace MetaColocationDemos.Networking
         // See HumanoidPoseNetworkSync.MaxExtrapolationFactor for the reasoning - same bound applied here.
         private const float MaxExtrapolationFactor = 3f;
 
+        // Untracked here only ever means a genuine live tracking dropout (see HandPoseApplier.ApplyInterpolated's
+        // graceSeconds doc) - never an intentional hide - so never give up on it: keep showing the last known
+        // pose (settling at a small clamped drift offset, not sliding away) for as long as tracking stays lost,
+        // and resolve straight back to live tracking the moment it returns.
+        private const float TrackingGraceSeconds = Mathf.Infinity;
+
         [Tooltip("The LeapProvider to read local tracking data from on the owner (e.g. the LeapServiceProvider " +
                  "on 'Service Provider Desktop'). Unused on non-owners.")]
         [SerializeField] private LeapProvider localLeapProvider;
@@ -229,9 +235,11 @@ namespace MetaColocationDemos.Networking
             // forward on a late update instead of freezing dead on target and visibly catching up).
             var t = Mathf.Clamp((Time.time - _interpolationStartTime) / SendInterval, 0f, MaxExtrapolationFactor);
             HandPoseApplier.ApplyInterpolated(leftHandModel, _previousLeftHand, _targetLeftHand, _renderLeftHand,
-                                               _previousLeftTracked, _targetLeftTracked, t, Time.time - _leftLostTrackingTime);
+                                               _previousLeftTracked, _targetLeftTracked, t, Time.time - _leftLostTrackingTime,
+                                               TrackingGraceSeconds);
             HandPoseApplier.ApplyInterpolated(rightHandModel, _previousRightHand, _targetRightHand, _renderRightHand,
-                                               _previousRightTracked, _targetRightTracked, t, Time.time - _rightLostTrackingTime);
+                                               _previousRightTracked, _targetRightTracked, t, Time.time - _rightLostTrackingTime,
+                                               TrackingGraceSeconds);
         }
     }
 }
