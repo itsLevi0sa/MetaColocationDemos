@@ -15,11 +15,21 @@ namespace MetaColocationDemos.Spectator
     /// A non-owner has no local Main Camera to attach - every client only ever loads its own role's rig
     /// scene, never someone else's, so a spectator watching another spectator's NetworkedPCUser simply finds
     /// nothing here and does nothing.
+    ///
+    /// Also applies SessionManager.LeapHeadTiltDegrees as a local pitch on the camera itself, every frame -
+    /// deliberately NOT on the NetworkedPCUser container's own transform (see PcUserHeadFollower), since
+    /// that container's rotation is replicated to every other client via NetworkTransform and drives what
+    /// they see (e.g. the Cube placeholder mesh). Tilting the container would tilt this spectator's
+    /// networked representation for everyone watching; tilting only the locally parented camera changes
+    /// just what this client personally sees through it. Applied every frame rather than once at parent
+    /// time so adjusting the Inspector value during Play takes effect immediately.
     /// </summary>
     [RequireComponent(typeof(NetworkObject))]
     public class LocalSpectatorCameraAnchor : NetworkBehaviour
     {
         private const string PcRigSceneName = "PCUser";
+
+        private Transform _mainCameraTransform;
 
         public override void OnNetworkSpawn()
         {
@@ -33,7 +43,15 @@ namespace MetaColocationDemos.Spectator
                 return;
             }
 
-            mainCamera.transform.SetParent(transform, worldPositionStays: false);
+            _mainCameraTransform = mainCamera.transform;
+            _mainCameraTransform.SetParent(transform, worldPositionStays: false);
+        }
+
+        private void LateUpdate()
+        {
+            if (_mainCameraTransform == null) return;
+
+            _mainCameraTransform.localRotation = Quaternion.Euler(SessionManager.LeapHeadTiltDegrees, 0f, 0f);
         }
 
         // Scoped to the PC rig scene specifically, rather than the scene-wide GameObject.Find("Main Camera")

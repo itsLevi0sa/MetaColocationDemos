@@ -33,6 +33,13 @@ namespace MetaColocationDemos.Spectator
     /// </summary>
     public class SessionManager : MonoBehaviour
     {
+        public enum LeapRetargetingMode
+        {
+            Off,
+            DynamicRetargetingToMovingVrHead,
+            StaticRetargetingToVrHead
+        }
+
         private const string EnvironmentSceneName = "Environment";
         private const string VrRigSceneName = "VRUser";
         private const string PcRigSceneName = "PCUser";
@@ -68,11 +75,40 @@ namespace MetaColocationDemos.Spectator
 
         [Header("Leap Motion Settings")]
 
-        [Tooltip("When checked, a connecting spectator's NetworkedPCUser attaches to the first VR user's " +
-                 "head instead of free-flying (see PcUserHeadFollower) - SpectatorFlyCamera is disabled for " +
-                 "as long as a VR user's avatar is present, and re-enabled if it despawns with no other VR " +
-                 "user to follow. Meant for a Leap Motion spectator riding along on the VR wearer's head.")]
-        [SerializeField] private bool leapRetargeting;
+        [Tooltip("How a connecting spectator's NetworkedPCUser is positioned relative to the first VR " +
+                 "user's head instead of free-flying (see PcUserHeadFollower). Either mode disables " +
+                 "SpectatorFlyCamera for as long as a VR user's avatar is tracked, and re-enables it if " +
+                 "that avatar despawns with no other VR user to fall back to.\n" +
+                 "- Off: normal free-fly spectator, never attaches to a VR user's head.\n" +
+                 "- Leap Motion dynamic retargeting to moving VR head: copies the tracked VR user's head " +
+                 "position/rotation every frame, like a camera clipped to their head - moves wherever they " +
+                 "look. Meant for a Leap Motion spectator riding along on the VR wearer's head.\n" +
+                 "- Leap Motion static retargeting to VR head: snaps once to the tracked VR user's head " +
+                 "position/rotation when tracking begins, then stays put - it does NOT follow their head " +
+                 "movement afterwards, so the VR user turning their head can move it out of the " +
+                 "spectator's now-static view.")]
+        [SerializeField] private LeapRetargetingMode leapRetargetingMode;
+
+        [Tooltip("World-space offset added to the tracked VR user's head position when placing the " +
+                 "NetworkedPCUser container (see PcUserHeadFollower), in both LeapRetargetingMode modes. " +
+                 "E.g. Y = -0.2 positions the Leap spectator 20cm below the VR user's actual head height. " +
+                 "Read live every frame, so changing this in the Inspector during Play takes effect " +
+                 "immediately - no need to reconnect.")]
+        [SerializeField] private Vector3 headOffset = new(0f, -0.2f, 0f);
+
+        [Tooltip("Local-space offset added on top of the LeapMotionRetargeter child's own prefab-authored " +
+                 "position (see PcUserHeadFollower) - lets the ghost-hand anchor point be nudged from the " +
+                 "Inspector without editing the NetworkedPCUser prefab itself. Read live every frame, so " +
+                 "changing this during Play takes effect immediately.")]
+        [SerializeField] private Vector3 retargeterOffset = Vector3.zero;
+
+        [Tooltip("Pitch (rotation around the local X axis, in degrees) applied to this client's local Main " +
+                 "Camera only (see LocalSpectatorCameraAnchor) - NOT to the NetworkedPCUser container itself, " +
+                 "so it changes only what this spectator personally sees, not their tilt as seen by everyone " +
+                 "else (e.g. the Cube placeholder mesh other clients see stays untilted). Positive tilts the " +
+                 "view downward, negative tilts it upward. Read live every frame, so changing this during " +
+                 "Play takes effect immediately.")]
+        [SerializeField] private float headTilt = 15f;
 
         [Tooltip("Local rendering choice, checked independently by every client: when unchecked, hides the " +
                  "VR user's humanoid body mesh (see AvatarBodyVisibility) and Meta's own hand-tracking " +
@@ -83,6 +119,13 @@ namespace MetaColocationDemos.Spectator
         [SerializeField] private bool enableHumanoidIk = true;
 
         [Header("Network Settings")]
+
+        [Tooltip("Whether player name tags (PlayerNameTagNGO, spawned via PlayerNameTagSpawnerNGO) are " +
+                 "shown at all. Applies uniformly to VR and PC/spectator users, since both spawn the same " +
+                 "name tag prefab. Uncheck to hide every player's name tag for this client - e.g. for a " +
+                 "clean recording/spectator feed. Checked independently by every client, same as the other " +
+                 "local rendering toggles above (see SpectatorNameTagFollower).")]
+        [SerializeField] private bool showNameTags = true;
 
         [Tooltip("The NetworkedVRUser prefab (registered in DefaultNetworkPrefabs) to spawn for each " +
                  "connecting VR client. Bone-level pose is replicated via HumanoidPoseNetworkSync; the " +
@@ -98,22 +141,43 @@ namespace MetaColocationDemos.Spectator
 
         public static readonly HashSet<ulong> SpectatorClientIds = new();
 
+        // Set in Awake(), read by the three live pass-through properties below - unlike every other setting
+        // on this component, headOffset/retargeterOffset/headTilt are meant to be tweaked from the Inspector
+        // mid-session (see PcUserHeadFollower/LocalSpectatorCameraAnchor), so they can't be snapshotted once
+        // into a static field the way the rest of Start() below does; they have to be read fresh off this
+        // instance's current serialized value every time a consumer asks.
+        private static SessionManager Instance { get; set; }
+
         public static bool IsLocalClientSpectator { get; private set; }
 
         public static bool IsColocationEnabled { get; private set; }
 
         public static bool IsPassthroughEnabled { get; private set; }
 
-        public static bool IsLeapRetargetingEnabled { get; private set; }
+        public static LeapRetargetingMode ActiveLeapRetargetingMode { get; private set; }
+
+        public static Vector3 PcUserHeadOffset => Instance != null ? Instance.headOffset : Vector3.zero;
+
+        public static Vector3 LeapMotionRetargeterOffset => Instance != null ? Instance.retargeterOffset : Vector3.zero;
+
+        public static float LeapHeadTiltDegrees => Instance != null ? Instance.headTilt : 0f;
 
         public static bool IsHumanoidIkEnabled { get; private set; }
+
+        public static bool IsShowNameTagsEnabled { get; private set; }
+
+        private void Awake()
+        {
+            Instance = this;
+        }
 
         private IEnumerator Start()
         {
             IsColocationEnabled = colocationEnabled;
             IsPassthroughEnabled = passthroughEnabled;
-            IsLeapRetargetingEnabled = leapRetargeting;
+            ActiveLeapRetargetingMode = leapRetargetingMode;
             IsHumanoidIkEnabled = enableHumanoidIk;
+            IsShowNameTagsEnabled = showNameTags;
 
             // A ParrelSync clone editor has no real XR device of its own to detect, so without this it
             // would always auto-detect as a spectator - making it useless for locally testing a VR client

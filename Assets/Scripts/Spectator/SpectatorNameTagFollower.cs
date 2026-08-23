@@ -1,3 +1,4 @@
+using System.Collections;
 using Meta.XR.MultiplayerBlocks.NGO;
 using Unity.Netcode.Components;
 using UnityEngine;
@@ -19,12 +20,24 @@ namespace MetaColocationDemos.Spectator
     /// spectator) and picks its follow target based on role: a spectator follows the spectator rig; a VR
     /// user follows their own centerEyeAnchor, same source PlayerNameTagNGO would use if its own write
     /// replicated correctly.
+    ///
+    /// Also enforces SessionManager.IsShowNameTagsEnabled: PlayerNameTagNGO.OnNetworkSpawn() (Meta's own
+    /// script, in the com.meta.xr.sdk.core package, not something this project can edit) sets its "NameTag"
+    /// child active/inactive purely based on ownership (hidden for the owner, shown to everyone else) and
+    /// never touches it again. When the setting is unchecked, HideAllNameTagsPeriodically below overrides that per
+    /// viewer - same as every other local rendering toggle on SessionManager (see AvatarBodyVisibility,
+    /// MetaHandVisualsToggle), each client independently hides every tag it renders, VR and PC alike, since
+    /// both roles spawn the same PlayerNameTagNGO prefab. Polls on a coroutine rather than every FixedUpdate
+    /// since new tags can spawn at any time as clients connect through the session, and a plain one-shot
+    /// check at Start() would miss them.
     /// </summary>
     public class SpectatorNameTagFollower : MonoBehaviour
     {
         [SerializeField] private float heightOffset = 0.3f;
 
         private const float PositionThreshold = 0.01f;
+        private const string NameTagChildName = "NameTag";
+        private const float HideNameTagsPollIntervalSeconds = 0.5f;
 
         private NetworkTransform _ownNameTagTransform;
         private Transform _centerEye;
@@ -32,6 +45,32 @@ namespace MetaColocationDemos.Spectator
         private Transform _spectatorRig;
         private bool _lookedUpSpectatorRig;
         private Vector3 _lastSentPosition;
+
+        private void Start()
+        {
+            if (!SessionManager.IsShowNameTagsEnabled)
+            {
+                StartCoroutine(HideAllNameTagsPeriodically());
+            }
+        }
+
+        private static IEnumerator HideAllNameTagsPeriodically()
+        {
+            var wait = new WaitForSeconds(HideNameTagsPollIntervalSeconds);
+            while (true)
+            {
+                foreach (var tag in FindObjectsByType<PlayerNameTagNGO>(FindObjectsSortMode.None))
+                {
+                    var nameTagGo = tag.transform.Find(NameTagChildName);
+                    if (nameTagGo != null && nameTagGo.gameObject.activeSelf)
+                    {
+                        nameTagGo.gameObject.SetActive(false);
+                    }
+                }
+
+                yield return wait;
+            }
+        }
 
         private void FixedUpdate()
         {

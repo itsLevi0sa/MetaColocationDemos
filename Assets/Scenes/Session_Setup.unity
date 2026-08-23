@@ -299,10 +299,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a562def2348ae8b40aa185dad60670a8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  leapProvider: {fileID: 0}
-  headPlaybackTarget: {fileID: 0}
-  leftHandPlaybackTarget: {fileID: 0}
-  rightHandPlaybackTarget: {fileID: 0}
   enableDebugHotkeys: 1
 --- !u!1 &288859821
 GameObject:
@@ -337,8 +333,12 @@ MonoBehaviour:
   forceSpectatorMode: 0
   colocationEnabled: 0
   passthroughEnabled: 0
-  leapRetargeting: 1
+  leapRetargetingMode: 2
+  headOffset: {x: 0, y: -0.2, z: 0}
+  retargeterOffset: {x: 0, y: 0, z: 0}
+  headTilt: 15
   enableHumanoidIk: 0
+  showNameTags: 0
   vrUserPrefab: {fileID: 5014441969086449538, guid: dd50aabdb5d88ec4ea50c48bd15f3419,
     type: 3}
   pcUserPrefab: {fileID: 8339533067020260767, guid: 89b2599aef012f944ba925439c2e3693,
@@ -365,7 +365,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 288859821}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: b7b8deaa578c16b4f8984cada08fbac8, type: 3}
   m_Name: 
